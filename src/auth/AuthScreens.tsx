@@ -31,7 +31,9 @@ export function LoginScreen() {
     setError(null)
     const { error: err } = await client.auth.signInWithOtp({
       email: normalizeEmail(email),
-      options: { shouldCreateUser: true },
+      // The email's login link brings people back here (temporary fallback
+      // until the code email is enabled with custom SMTP).
+      options: { shouldCreateUser: true, emailRedirectTo: window.location.origin },
     })
     setBusy(false)
     if (err) {

@@ -161,7 +161,9 @@ site_url = "http://localhost:5173"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["http://localhost:5173", "http://127.0.0.1:5173"]
+# Where the login link in the email may send people back to. The 192.168
+# pattern covers testing on a phone over home Wi-Fi.
+additional_redirect_urls = ["http://localhost:5173/**", "http://127.0.0.1:5173/**", "http://192.168.*.*:5173/**"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -246,13 +248,15 @@ otp_expiry = 3600
 
 # Login emails carry a 6-digit code ({{ .Token }}) the user types into the app.
 # New users get the "confirmation" email, returning users the "magic_link" one.
-[auth.email.template.confirmation]
-subject = "Вашият код за вход / Your login code"
-content_path = "./supabase/templates/login-code.html"
-
-[auth.email.template.magic_link]
-subject = "Вашият код за вход / Your login code"
-content_path = "./supabase/templates/login-code.html"
+# Supabase only allows custom templates with custom SMTP on the free plan, so
+# these stay off until SMTP is configured; uncomment them, then config push.
+# [auth.email.template.confirmation]
+# subject = "Вашият код за вход / Your login code"
+# content_path = "./supabase/templates/login-code.html"
+#
+# [auth.email.template.magic_link]
+# subject = "Вашият код за вход / Your login code"
+# content_path = "./supabase/templates/login-code.html"
 
 # [auth.email.template.invite]
 # subject = "You have been invited"
