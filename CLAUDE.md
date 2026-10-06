@@ -12,6 +12,15 @@ Don't apply template rules here.
 - Supabase: Postgres, email OTP auth, row-level security (EU / Frankfurt region)
 - i18n: Bulgarian default, English secondary. Never hard-code user-facing strings.
 
+## Commands
+
+- `npm run dev`: dev server on :5173
+- `npm test`: vitest unit tests
+- `npm run build`: typecheck + production build
+
+All text lives in `src/i18n/messages.ts`. Add every key in both `bg` and `en`.
+Screens use only the `DataStore` interface in `src/data/types.ts`.
+
 ## Rules
 
 - Users have low technical skill: big touch targets, few screens, plain words.

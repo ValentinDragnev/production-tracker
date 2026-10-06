@@ -1,0 +1,10 @@
+node_modules
+dist
+dev-dist
+.env
+.env.local
+.DS_Store
+*.log
+
+# AI tooling session logs
+.ijfw/
