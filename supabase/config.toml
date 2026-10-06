@@ -248,15 +248,16 @@ otp_expiry = 3600
 
 # Login emails carry a 6-digit code ({{ .Token }}) the user types into the app.
 # New users get the "confirmation" email, returning users the "magic_link" one.
-# Supabase only allows custom templates with custom SMTP on the free plan, so
-# these stay off until SMTP is configured; uncomment them, then config push.
-# [auth.email.template.confirmation]
-# subject = "Вашият код за вход / Your login code"
-# content_path = "./supabase/templates/login-code.html"
-#
-# [auth.email.template.magic_link]
-# subject = "Вашият код за вход / Your login code"
-# content_path = "./supabase/templates/login-code.html"
+# Custom templates need custom SMTP on the free plan. SMTP (Gmail) is set in
+# the dashboard and deliberately not declared here, so config push leaves the
+# credentials alone.
+[auth.email.template.confirmation]
+subject = "Вашият код за вход / Your login code"
+content_path = "./supabase/templates/login-code.html"
+
+[auth.email.template.magic_link]
+subject = "Вашият код за вход / Your login code"
+content_path = "./supabase/templates/login-code.html"
 
 # [auth.email.template.invite]
 # subject = "You have been invited"

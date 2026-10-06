@@ -6,7 +6,7 @@ import type { MessageKey } from '../i18n/messages'
 import { useSession } from './SessionProvider'
 
 const RESEND_AFTER_S = 60
-// Supabase sends 6 digits once our config is pushed; 8 is its default.
+// supabase/config.toml sets 6; accept up to 8 (Supabase's default) to be safe.
 const CODE_MIN = 6
 const CODE_MAX = 8
 
@@ -31,9 +31,7 @@ export function LoginScreen() {
     setError(null)
     const { error: err } = await client.auth.signInWithOtp({
       email: normalizeEmail(email),
-      // The email's login link brings people back here (temporary fallback
-      // until the code email is enabled with custom SMTP).
-      options: { shouldCreateUser: true, emailRedirectTo: window.location.origin },
+      options: { shouldCreateUser: true },
     })
     setBusy(false)
     if (err) {

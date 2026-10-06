@@ -58,14 +58,14 @@ const bg = {
 
   // Login and business setup
   loginTitle: 'Вход',
-  loginIntro: 'Въведете имейла си. Ще ви изпратим писмо за вход.',
+  loginIntro: 'Въведете имейла си. Ще ви изпратим код за вход.',
   email: 'Имейл',
   emailPlaceholder: 'ime@primer.bg',
   emailInvalid: 'Въведете валиден имейл',
   sendCode: 'Изпрати код',
   sending: 'Изпращане…',
   codeTitle: 'Проверете пощата си',
-  codeIntro: 'Изпратихме имейл на {email}. Въведете кода от него или отворете връзката в писмото на това устройство.',
+  codeIntro: 'Изпратихме код на {email}. Въведете го тук.',
   code: 'Код',
   codeInvalid: 'Кодът е грешен или е изтекъл. Опитайте пак.',
   signIn: 'Влез',
@@ -170,14 +170,14 @@ const en: Record<MessageKey, string> = {
 
   // Login and business setup
   loginTitle: 'Log in',
-  loginIntro: "Enter your email. We'll send you a login email.",
+  loginIntro: "Enter your email. We'll send you a login code.",
   email: 'Email',
   emailPlaceholder: 'name@example.com',
   emailInvalid: 'Enter a valid email',
   sendCode: 'Send code',
   sending: 'Sending…',
   codeTitle: 'Check your email',
-  codeIntro: 'We sent an email to {email}. Enter the code from it, or open the link in it on this device.',
+  codeIntro: 'We sent a code to {email}. Enter it here.',
   code: 'Code',
   codeInvalid: 'That code is wrong or has expired. Try again.',
   signIn: 'Log in',

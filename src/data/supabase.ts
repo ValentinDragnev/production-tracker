@@ -7,8 +7,6 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined
 export const supabase: SupabaseClient | null =
   url && key
     ? createClient(url, key, {
-        // Implicit flow so the login link in the email also works when it
-        // opens in a different browser than the one that asked for it.
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' },
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
       })
     : null
