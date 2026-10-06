@@ -15,6 +15,7 @@ Don't apply template rules here.
 ## Commands
 
 - `npm run dev`: dev server on :5173
+- Live: https://proizvodstvo.netlify.app (Netlify deploys every push to main)
 - `npm test`: vitest unit tests
 - `npm run test:db`: migrations + RLS checks in PGlite (no Docker needed)
 - `npm run build`: typecheck + production build

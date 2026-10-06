@@ -29,3 +29,9 @@
   for = "/sw.js"
   [headers.values]
     Cache-Control = "no-cache"
+
+# With nosniff on, the manifest needs its proper type for "install app" to work.
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
