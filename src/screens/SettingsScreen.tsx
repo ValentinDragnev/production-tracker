@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useOptionalSession } from '../auth/SessionProvider'
+import { InvitePanel } from '../components/InvitePanel'
 import { useStore } from '../data/StoreProvider'
-import { Team, looksLikeEmail, type Invite, type Member } from '../data/team'
+import { Team, looksLikeEmail, normalizeEmail, type Invite, type Member } from '../data/team'
 import type { Product, ProductGroup } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/messages'
@@ -79,7 +80,9 @@ export function SettingsScreen() {
         </section>
       )}
 
-      {ready && team && role === 'owner' && <TeamSection team={team} myEmail={ready.email} />}
+      {ready && team && role === 'owner' && (
+        <TeamSection team={team} myEmail={ready.email} businessName={ready.business.name} />
+      )}
 
       {ready && session && (
         <section className="group">
@@ -221,13 +224,14 @@ function ProductsSection() {
   )
 }
 
-function TeamSection({ team, myEmail }: { team: Team; myEmail: string }) {
+function TeamSection({ team, myEmail, businessName }: { team: Team; myEmail: string; businessName: string }) {
   const { t } = useI18n()
   const [members, setMembers] = useState<Member[] | null>(null)
   const [invites, setInvites] = useState<Invite[]>([])
   const [email, setEmail] = useState('')
   const [error, setError] = useState<'emailInvalid' | 'actionFailed' | null>(null)
-  const [justInvited, setJustInvited] = useState(false)
+  // Which invite's send panel is open, and whether it was just added.
+  const [sharing, setSharing] = useState<{ email: string; justAdded: boolean } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -283,14 +287,41 @@ function TeamSection({ team, myEmail }: { team: Team; myEmail: string }) {
           </div>
         ))}
         {invites.map((i) => (
-          <div key={i.email} className="row">
-            <div>
-              <div className="row__name">{i.email}</div>
-              <div className="row__detail">{t('invited')}</div>
+          <div key={i.email}>
+            <div className="row row--stacked">
+              <div className="row__main">
+                <div className="row__name">{i.email}</div>
+                <div className="row__detail">{t('invited')}</div>
+              </div>
+              <div className="row__actions">
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  aria-expanded={sharing?.email === i.email}
+                  onClick={() => setSharing({ email: i.email, justAdded: false })}
+                >
+                  {t('send')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => {
+                    if (sharing?.email === i.email) setSharing(null)
+                    void run(() => team.cancelInvite(i.email))
+                  }}
+                >
+                  {t('remove')}
+                </button>
+              </div>
             </div>
-            <button type="button" className="btn btn--ghost" onClick={() => void run(() => team.cancelInvite(i.email))}>
-              {t('remove')}
-            </button>
+            {sharing?.email === i.email && (
+              <InvitePanel
+                email={i.email}
+                businessName={businessName}
+                justAdded={sharing.justAdded}
+                onClose={() => setSharing(null)}
+              />
+            )}
           </div>
         ))}
         <form
@@ -303,8 +334,8 @@ function TeamSection({ team, myEmail }: { team: Team; myEmail: string }) {
               return
             }
             if (await run(() => team.invite(email))) {
+              setSharing({ email: normalizeEmail(email), justAdded: true })
               setEmail('')
-              setJustInvited(true)
             }
           }}
         >
@@ -323,12 +354,10 @@ function TeamSection({ team, myEmail }: { team: Team; myEmail: string }) {
               onChange={(e) => {
                 setEmail(e.target.value)
                 setError(null)
-                setJustInvited(false)
               }}
             />
           </label>
           {error && <p className="field__error">{t(error)}</p>}
-          {justInvited && <p className="muted team__hint">{t('inviteHint')}</p>}
           <div className="name-form__actions">
             <button type="submit" className="btn btn--primary">
               + {t('invite')}

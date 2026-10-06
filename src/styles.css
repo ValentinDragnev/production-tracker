@@ -782,10 +782,73 @@ p {
   overflow-wrap: anywhere;
 }
 
-.team__hint {
-  margin: 8px 0 0;
-}
-
 select.field__input {
   appearance: auto;
+}
+
+/* --- Staff invites ------------------------------------------------------- */
+
+.row__main {
+  min-width: 0;
+}
+
+.row__main .row__name {
+  overflow-wrap: anywhere;
+}
+
+.row__actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.row__actions .btn {
+  padding: 0 12px;
+}
+
+/* Long email on its own line, buttons underneath. */
+.row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.invite {
+  padding: 14px 16px;
+  background: var(--primary-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.invite__title {
+  font-weight: 600;
+  color: var(--primary-soft-text);
+  overflow-wrap: anywhere;
+}
+
+.invite__message {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.invite__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.invite__link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.invite__hint {
+  margin: 10px 0 0;
 }
