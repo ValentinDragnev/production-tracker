@@ -19,7 +19,7 @@ throw away for each product, so they can't adjust production.
 |---|---|
 | Platform | One web app, installable on phones (PWA). No app stores in v1. |
 | Login | Email + 6-digit code (no password). Session lasts months. |
-| Data | Central database (Supabase, EU region) so phone and computer stay in sync. |
+| Data | Central database (Supabase, EU / Ireland `eu-west-1`) so phone and computer stay in sync. |
 | Language | Bulgarian (default) + English, switchable. |
 | Units | Pieces only (whole numbers). |
 | Roles | Owner + staff. Owner invites staff by email. |
@@ -58,10 +58,15 @@ daily_entries   business_id, product_id, date, produced int, wasted int,
                 updated_by, updated_at      UNIQUE (product_id, date)
 ```
 
-Access rules (enforced in the database with row-level security):
+Access rules (enforced in the database with row-level security, see
+`supabase/migrations/` and the checks in `supabase/tests/rls_check.sql`):
 - Members of a business can read everything in it and write `daily_entries`.
 - Only owners can write groups, products, invites and memberships.
 - `wasted` can't exceed `produced`, and both must be ≥ 0.
+- Businesses are created only through `create_business()`, which makes the
+  caller the owner. Invites turn into memberships through `accept_invites()`,
+  which runs after every login and matches the verified login email.
+- Logged-out visitors have no table access at all.
 
 ## UX rules
 

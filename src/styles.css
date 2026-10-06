@@ -690,3 +690,102 @@ p {
   font-size: 14px;
   margin: 2px 0 12px;
 }
+
+/* --- Login and setup ----------------------------------------------------- */
+
+.auth {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: calc(24px + env(safe-area-inset-top)) 20px 32px;
+}
+
+.auth__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 40px;
+}
+
+.auth__top img {
+  border-radius: 10px;
+}
+
+.auth__app {
+  flex: 1;
+  font-weight: 600;
+}
+
+.auth__title {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.auth__intro {
+  color: var(--text-muted);
+  margin: 8px 0 24px;
+}
+
+.auth__submit {
+  margin-top: 16px;
+}
+
+.auth__code {
+  font-size: 28px;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.auth__links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.auth__note {
+  margin-top: 24px;
+}
+
+.auth__loading {
+  text-align: center;
+  padding-top: 40vh;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 8px 8px 8px 14px;
+  border-radius: 12px;
+  background: var(--high-bg);
+  color: var(--high-text);
+  font-size: 15px;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account__email {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.team__hint {
+  margin: 8px 0 0;
+}
+
+select.field__input {
+  appearance: auto;
+}

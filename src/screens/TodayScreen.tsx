@@ -15,7 +15,7 @@ const EMPTY: Counts = { produced: 0, wasted: 0 }
 
 export function TodayScreen() {
   const { t, locale } = useI18n()
-  const { store, groups, products } = useStore()
+  const { store, groups, products, role } = useStore()
   const today = todayInSofia()
   const [date, setDate] = useState<ISODate>(today)
   // Tagged with its date so we never show (or edit) one day's numbers under another.
@@ -116,7 +116,9 @@ export function TodayScreen() {
         {status === 'error' && t('saveFailed')}
       </div>
 
-      {counts && visibleGroups.length === 0 && <EmptyState title={t('noProducts')} hint={t('noProductsHint')} />}
+      {counts && visibleGroups.length === 0 && (
+        <EmptyState title={t('noProducts')} hint={t(role === 'owner' ? 'noProductsHint' : 'noProductsStaffHint')} />
+      )}
 
       {counts &&
         visibleGroups.map(({ group, products: groupProducts }) => (

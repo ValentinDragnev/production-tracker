@@ -7,31 +7,54 @@ The spec is in [docs/SPEC.md](docs/SPEC.md).
 
 ## Status
 
-**Demo build.** All screens work with three weeks of sample data, stored in the
-browser's localStorage. There's no login or shared database yet; Supabase is next.
+Login by email code, one database shared by all customers, and each business's
+data kept apart by row-level security in the database. Owners manage products
+and staff; staff enter the daily numbers.
+
+Without Supabase settings the app runs in **demo mode**: sample data in the
+browser, no login.
 
 ## Run it
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm test           # unit tests (dates, report maths)
-npm run build      # type-check + production build into dist/
+cp .env.example .env.local   # then fill in the Supabase URL and publishable key
+npm run dev                  # http://localhost:5173
 ```
 
 To try it on a phone on the same Wi-Fi, run `npm run dev -- --host` and open
 the "Network" address it prints.
 
+## Checks
+
+```bash
+npm test           # unit tests (dates, report maths)
+npm run test:db    # migrations + row-level security checks, in-memory Postgres
+npm run build      # type-check + production build into dist/
+```
+
+## Database (Supabase)
+
+Schema changes live in `supabase/migrations/`; auth settings and the login
+email in `supabase/config.toml` and `supabase/templates/`.
+
+```bash
+supabase db push        # apply new migrations to the linked project
+supabase config diff    # preview auth setting changes
+supabase config push    # apply them
+```
+
 ## Layout
 
 ```
 src/
-  data/       types, DataStore interface, demo localStorage store
+  auth/       session, login, business setup
+  data/       types, DataStore interface, Supabase + demo stores, staff
   lib/        date helpers (Europe/Sofia, Mon–Sun weeks), report calculations
   i18n/       Bulgarian + English texts
   screens/    Today, Reports, Settings
   components/ Stepper and small shared pieces
 ```
 
-Screens only talk to the `DataStore` interface (`src/data/types.ts`), so
-switching from the demo store to Supabase doesn't touch the UI.
+Screens only talk to the `DataStore` interface (`src/data/types.ts`), so the
+same UI runs on Supabase or on the demo store.

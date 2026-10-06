@@ -20,7 +20,7 @@ const TABS: { id: Tab; label: MessageKey; icon: string }[] = [
 
 export function App() {
   const { t } = useI18n()
-  const { loading } = useStore()
+  const { loading, error, refresh } = useStore()
   const [tab, setTab] = useState<Tab>('today')
 
   useEffect(() => {
@@ -34,6 +34,14 @@ export function App() {
   return (
     <div className="app">
       <main className="app__main">
+        {error && (
+          <div className="banner" role="alert">
+            <span>{t('loadFailed')}</span>
+            <button type="button" className="link-btn" onClick={() => void refresh()}>
+              {t('tryAgain')}
+            </button>
+          </div>
+        )}
         {!loading && tab === 'today' && <TodayScreen />}
         {!loading && tab === 'reports' && <ReportsScreen />}
         {!loading && tab === 'settings' && <SettingsScreen />}

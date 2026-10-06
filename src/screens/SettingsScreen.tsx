@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useOptionalSession } from '../auth/SessionProvider'
 import { useStore } from '../data/StoreProvider'
+import { Team, looksLikeEmail, type Invite, type Member } from '../data/team'
 import type { Product, ProductGroup } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/messages'
@@ -12,33 +14,12 @@ const LANGUAGES: { lang: Lang; label: string }[] = [
 
 export function SettingsScreen() {
   const { t, lang, setLang } = useI18n()
-  const { store, groups, products, refresh, resetDemo } = useStore()
-  const [addingGroup, setAddingGroup] = useState(false)
-
-  const sortedGroups = sortByOrder(groups)
-
-  const saveGroup = async (group: ProductGroup) => {
-    await store.saveGroup(group)
-    await refresh()
-  }
-  const saveProduct = async (product: Product) => {
-    await store.saveProduct(product)
-    await refresh()
-  }
-
-  /** Swap an item with its neighbour, renumbering the list so orders stay unique. */
-  async function move<T extends { sortOrder: number; name: string }>(
-    list: T[],
-    index: number,
-    delta: -1 | 1,
-    saveItem: (item: T) => Promise<void>,
-  ) {
-    const target = index + delta
-    if (target < 0 || target >= list.length) return
-    const reordered = [...list]
-    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
-    await Promise.all(reordered.map((item, i) => saveItem({ ...item, sortOrder: i + 1 })))
-  }
+  const { role, resetDemo } = useStore()
+  const session = useOptionalSession()
+  const ready = session?.state.status === 'ready' ? session.state : null
+  const client = session?.client
+  const businessId = ready?.business.id
+  const team = useMemo(() => (client && businessId ? new Team(client, businessId) : null), [client, businessId])
 
   return (
     <div className="screen">
@@ -61,100 +42,301 @@ export function SettingsScreen() {
         </div>
       </section>
 
-      <section className="group">
-        <h2 className="group__title">{t('productsAndGroups')}</h2>
-        <p className="muted">{t('hideHint')}</p>
-
-        {sortedGroups.map((group, gi) => {
-          const groupProducts = sortByOrder(products.filter((p) => p.groupId === group.id))
-          return (
-            <div key={group.id} className="card card--list settings-group">
-              <EditableRow
-                name={group.name}
-                hidden={group.archived}
-                strong
-                label={t('groupName')}
-                onSave={(name) => saveGroup({ ...group, name })}
-                onToggleHidden={() => saveGroup({ ...group, archived: !group.archived })}
-                onMoveUp={gi > 0 ? () => move(sortedGroups, gi, -1, store.saveGroup.bind(store)).then(refresh) : undefined}
-                onMoveDown={
-                  gi < sortedGroups.length - 1
-                    ? () => move(sortedGroups, gi, 1, store.saveGroup.bind(store)).then(refresh)
-                    : undefined
-                }
-              />
-              {groupProducts.map((product, pi) => (
-                <EditableRow
-                  key={product.id}
-                  name={product.name}
-                  hidden={product.archived}
-                  indent
-                  label={t('productName')}
-                  onSave={(name) => saveProduct({ ...product, name })}
-                  onToggleHidden={() => saveProduct({ ...product, archived: !product.archived })}
-                  onMoveUp={
-                    pi > 0 ? () => move(groupProducts, pi, -1, store.saveProduct.bind(store)).then(refresh) : undefined
-                  }
-                  onMoveDown={
-                    pi < groupProducts.length - 1
-                      ? () => move(groupProducts, pi, 1, store.saveProduct.bind(store)).then(refresh)
-                      : undefined
-                  }
-                />
-              ))}
-              <AddButton
-                label={t('addProduct')}
-                fieldLabel={t('productName')}
-                placeholder={t('productPlaceholder')}
-                onAdd={(name) =>
-                  saveProduct({
-                    id: newId(),
-                    groupId: group.id,
-                    name,
-                    sortOrder: groupProducts.length + 1,
-                    archived: false,
-                  })
-                }
-              />
-            </div>
-          )
-        })}
-
-        {addingGroup ? (
+      {ready && session && (
+        <section className="group">
+          <h2 className="group__title">{t('business')}</h2>
           <div className="card">
-            <NameForm
-              label={t('groupName')}
-              placeholder={t('groupPlaceholder')}
-              onCancel={() => setAddingGroup(false)}
-              onSave={async (name) => {
-                await saveGroup({ id: newId(), name, sortOrder: groups.length + 1, archived: false })
-                setAddingGroup(false)
+            <div className="card__title">{ready.business.name}</div>
+            <p className="muted">
+              {t('yourRole', { role: t(ready.business.role === 'owner' ? 'roleOwner' : 'roleStaff') })}
+            </p>
+            {ready.businesses.length > 1 && (
+              <label className="field">
+                <span className="field__label">{t('switchBusiness')}</span>
+                <select
+                  className="field__input"
+                  value={ready.business.id}
+                  onChange={(e) => session.switchBusiness(e.target.value)}
+                >
+                  {ready.businesses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        </section>
+      )}
+
+      {role === 'owner' ? (
+        <ProductsSection />
+      ) : (
+        <section className="group">
+          <h2 className="group__title">{t('productsAndGroups')}</h2>
+          <p className="muted">{t('staffProductsHint')}</p>
+        </section>
+      )}
+
+      {ready && team && role === 'owner' && <TeamSection team={team} myEmail={ready.email} />}
+
+      {ready && session && (
+        <section className="group">
+          <h2 className="group__title">{t('account')}</h2>
+          <div className="card account">
+            <span className="account__email">{ready.email}</span>
+            <button type="button" className="btn btn--secondary" onClick={() => void session.signOut()}>
+              {t('signOut')}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {resetDemo && (
+        <section className="group">
+          <div className="notice">
+            <strong>{t('demoMode')}</strong>
+            <p>{t('demoModeHint')}</p>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => {
+                if (window.confirm(t('resetConfirm'))) void resetDemo()
               }}
+            >
+              {t('resetDemo')}
+            </button>
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function ProductsSection() {
+  const { t } = useI18n()
+  const { store, groups, products, refresh } = useStore()
+  const [addingGroup, setAddingGroup] = useState(false)
+
+  const sortedGroups = sortByOrder(groups)
+
+  // Runs a change, then reloads; tells the user if it didn't go through.
+  const change = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+    } catch {
+      window.alert(t('actionFailed'))
+    }
+    await refresh()
+  }
+  const saveGroup = (group: ProductGroup) => change(() => store.saveGroup(group))
+  const saveProduct = (product: Product) => change(() => store.saveProduct(product))
+
+  /** Swap an item with its neighbour, renumbering the list so orders stay unique. */
+  function move<T extends { sortOrder: number; name: string }>(
+    list: T[],
+    index: number,
+    delta: -1 | 1,
+    saveItem: (item: T) => Promise<void>,
+  ) {
+    const target = index + delta
+    const reordered = [...list]
+    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
+    return change(() => Promise.all(reordered.map((item, i) => saveItem({ ...item, sortOrder: i + 1 }))))
+  }
+  const saveGroupRaw = (g: ProductGroup) => store.saveGroup(g)
+  const saveProductRaw = (p: Product) => store.saveProduct(p)
+
+  return (
+    <section className="group">
+      <h2 className="group__title">{t('productsAndGroups')}</h2>
+      <p className="muted">{t('hideHint')}</p>
+
+      {sortedGroups.map((group, gi) => {
+        const groupProducts = sortByOrder(products.filter((p) => p.groupId === group.id))
+        return (
+          <div key={group.id} className="card card--list settings-group">
+            <EditableRow
+              name={group.name}
+              hidden={group.archived}
+              strong
+              label={t('groupName')}
+              onSave={(name) => saveGroup({ ...group, name })}
+              onToggleHidden={() => saveGroup({ ...group, archived: !group.archived })}
+              onMoveUp={gi > 0 ? () => move(sortedGroups, gi, -1, saveGroupRaw) : undefined}
+              onMoveDown={gi < sortedGroups.length - 1 ? () => move(sortedGroups, gi, 1, saveGroupRaw) : undefined}
+            />
+            {groupProducts.map((product, pi) => (
+              <EditableRow
+                key={product.id}
+                name={product.name}
+                hidden={product.archived}
+                indent
+                label={t('productName')}
+                onSave={(name) => saveProduct({ ...product, name })}
+                onToggleHidden={() => saveProduct({ ...product, archived: !product.archived })}
+                onMoveUp={pi > 0 ? () => move(groupProducts, pi, -1, saveProductRaw) : undefined}
+                onMoveDown={
+                  pi < groupProducts.length - 1 ? () => move(groupProducts, pi, 1, saveProductRaw) : undefined
+                }
+              />
+            ))}
+            <AddButton
+              label={t('addProduct')}
+              fieldLabel={t('productName')}
+              placeholder={t('productPlaceholder')}
+              onAdd={(name) =>
+                saveProduct({
+                  id: newId(),
+                  groupId: group.id,
+                  name,
+                  sortOrder: groupProducts.length + 1,
+                  archived: false,
+                })
+              }
             />
           </div>
-        ) : (
-          <button type="button" className="btn btn--secondary btn--block" onClick={() => setAddingGroup(true)}>
-            + {t('addGroup')}
-          </button>
-        )}
-      </section>
+        )
+      })}
 
-      <section className="group">
-        <div className="notice">
-          <strong>{t('demoMode')}</strong>
-          <p>{t('demoModeHint')}</p>
-          <button
-            type="button"
-            className="btn btn--secondary"
-            onClick={() => {
-              if (window.confirm(t('resetConfirm'))) void resetDemo()
+      {addingGroup ? (
+        <div className="card">
+          <NameForm
+            label={t('groupName')}
+            placeholder={t('groupPlaceholder')}
+            onCancel={() => setAddingGroup(false)}
+            onSave={async (name) => {
+              await saveGroup({ id: newId(), name, sortOrder: groups.length + 1, archived: false })
+              setAddingGroup(false)
             }}
-          >
-            {t('resetDemo')}
-          </button>
+          />
         </div>
-      </section>
-    </div>
+      ) : (
+        <button type="button" className="btn btn--secondary btn--block" onClick={() => setAddingGroup(true)}>
+          + {t('addGroup')}
+        </button>
+      )}
+    </section>
+  )
+}
+
+function TeamSection({ team, myEmail }: { team: Team; myEmail: string }) {
+  const { t } = useI18n()
+  const [members, setMembers] = useState<Member[] | null>(null)
+  const [invites, setInvites] = useState<Invite[]>([])
+  const [email, setEmail] = useState('')
+  const [error, setError] = useState<'emailInvalid' | 'actionFailed' | null>(null)
+  const [justInvited, setJustInvited] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      const [m, i] = await Promise.all([team.members(), team.invites()])
+      setMembers(m)
+      setInvites(i)
+    } catch {
+      setError('actionFailed')
+    }
+  }, [team])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const run = async (fn: () => Promise<void>) => {
+    setError(null)
+    try {
+      await fn()
+      await load()
+      return true
+    } catch {
+      setError('actionFailed')
+      return false
+    }
+  }
+
+  return (
+    <section className="group">
+      <h2 className="group__title">{t('staff')}</h2>
+      <p className="muted">{t('staffHint')}</p>
+      <div className="card card--list">
+        {members?.map((m) => (
+          <div key={m.userId} className="row">
+            <div>
+              <div className="row__name">{m.email}</div>
+              <div className="row__detail">
+                {t(m.role === 'owner' ? 'roleOwner' : 'roleStaff')}
+                {m.email === myEmail && ` · ${t('you')}`}
+              </div>
+            </div>
+            {m.role !== 'owner' && (
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => {
+                  if (window.confirm(t('removeConfirm', { email: m.email }))) void run(() => team.removeMember(m.userId))
+                }}
+              >
+                {t('remove')}
+              </button>
+            )}
+          </div>
+        ))}
+        {invites.map((i) => (
+          <div key={i.email} className="row">
+            <div>
+              <div className="row__name">{i.email}</div>
+              <div className="row__detail">{t('invited')}</div>
+            </div>
+            <button type="button" className="btn btn--ghost" onClick={() => void run(() => team.cancelInvite(i.email))}>
+              {t('remove')}
+            </button>
+          </div>
+        ))}
+        <form
+          className="row-editor"
+          noValidate
+          onSubmit={async (e) => {
+            e.preventDefault()
+            if (!looksLikeEmail(email)) {
+              setError('emailInvalid')
+              return
+            }
+            if (await run(() => team.invite(email))) {
+              setEmail('')
+              setJustInvited(true)
+            }
+          }}
+        >
+          <label className="field">
+            <span className="field__label">{t('staffEmail')}</span>
+            <input
+              className="field__input"
+              type="email"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder={t('emailPlaceholder')}
+              value={email}
+              aria-invalid={error === 'emailInvalid'}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                setError(null)
+                setJustInvited(false)
+              }}
+            />
+          </label>
+          {error && <p className="field__error">{t(error)}</p>}
+          {justInvited && <p className="muted team__hint">{t('inviteHint')}</p>}
+          <div className="name-form__actions">
+            <button type="submit" className="btn btn--primary">
+              + {t('invite')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
   )
 }
 
@@ -304,7 +486,15 @@ function NameForm({ label, initial = '', placeholder, cancelLabel, onSave, onCan
   )
 }
 
-/** randomUUID only exists on secure origins; plain-http LAN testing needs a fallback. */
+/**
+ * A v4 UUID. crypto.randomUUID only exists on secure origins, so plain-http
+ * testing on a phone over Wi-Fi builds one from getRandomValues instead.
+ */
 function newId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  const b = globalThis.crypto.getRandomValues(new Uint8Array(16))
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
