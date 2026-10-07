@@ -19,8 +19,9 @@ export type SessionState =
       status: 'ready'
       email: string
       business: BusinessMembership
-      subscription: Subscription
-      prices: PriceSettings
+      /** null if it couldn't be read; the database still enforces access. */
+      subscription: Subscription | null
+      prices: PriceSettings | null
     }
 
 interface SessionContextValue {
@@ -76,7 +77,7 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
         return
       }
       const { id, name } = membership.businesses
-      const [subscription, prices] = await Promise.all([loadSubscription(client, id), loadPriceSettings(client)])
+      const [subscription, prices] = await loadBilling(client, id)
       setState({ status: 'ready', email, business: { id, name, role: membership.role }, subscription, prices })
     } catch {
       setState({ status: 'error' })
@@ -99,12 +100,9 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
   const businessId = state.status === 'ready' ? state.business.id : null
   const refreshBilling = useCallback(async () => {
     if (!businessId) return
-    try {
-      const [subscription, prices] = await Promise.all([loadSubscription(client, businessId), loadPriceSettings(client)])
-      setState((s) => (s.status === 'ready' && s.business.id === businessId ? { ...s, subscription, prices } : s))
-    } catch {
-      // Keep what we had; the next refresh will try again.
-    }
+    const [subscription, prices] = await loadBilling(client, businessId)
+    if (!subscription) return // Keep what we had; the next refresh will try again.
+    setState((s) => (s.status === 'ready' && s.business.id === businessId ? { ...s, subscription, prices } : s))
   }, [client, businessId])
 
   // Pick up a payment (or a lock) when the app comes back to the foreground.
@@ -148,6 +146,17 @@ export function useSession(): SessionContextValue {
   const ctx = useContext(SessionContext)
   if (!ctx) throw new Error('useSession must be used inside SessionProvider')
   return ctx
+}
+
+/**
+ * Subscription and prices, or nulls if they can't be read. Missing billing
+ * info must never stop people from using the app.
+ */
+async function loadBilling(client: SupabaseClient, businessId: string) {
+  return Promise.all([
+    loadSubscription(client, businessId).catch(() => null),
+    loadPriceSettings(client).catch(() => null),
+  ])
 }
 
 /** Like useSession, but returns null in demo mode (no SessionProvider). */

@@ -71,11 +71,12 @@ function StandaloneAdmin({ onBack }: { onBack(): void }) {
   )
 }
 
-function BusinessApp(props: { client: SupabaseClient; business: BusinessMembership; subscription: Subscription }) {
+function BusinessApp(props: { client: SupabaseClient; business: BusinessMembership; subscription: Subscription | null }) {
   const { client, business } = props
   const { refreshBilling } = useSession()
   const store = useMemo(() => new SupabaseStore(client, business.id), [client, business.id])
-  const canEdit = canEnterNumbers(subscriptionState(props.subscription))
+  // Unknown subscription: let them try; the database has the final say.
+  const canEdit = props.subscription ? canEnterNumbers(subscriptionState(props.subscription)) : true
   return (
     <StoreProvider store={store} role={business.role} canEdit={canEdit} onRecheckAccess={() => void refreshBilling()}>
       <App />

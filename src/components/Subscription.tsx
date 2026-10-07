@@ -9,6 +9,7 @@ function useSubscription() {
   const session = useOptionalSession()
   if (session?.state.status !== 'ready') return null
   const { subscription, prices, business } = session.state
+  if (!subscription) return null
   return {
     state: subscriptionState(subscription),
     everPaid: subscription.paidUntil !== null,
@@ -76,8 +77,9 @@ export function SubscriptionSection() {
   )
 }
 
-function PaymentInfo({ prices }: { prices: PriceSettings }) {
+function PaymentInfo({ prices }: { prices: PriceSettings | null }) {
   const { t, lang, locale } = useI18n()
+  if (!prices) return <p className="pay-info__text">{t('paymentContact')}</p>
   const money = (n: number) => new Intl.NumberFormat(locale, { style: 'currency', currency: prices.currency }).format(n)
   // Fall back to the other language rather than show nothing.
   const info = (lang === 'bg' ? prices.paymentInfoBg || prices.paymentInfoEn : prices.paymentInfoEn || prices.paymentInfoBg).trim()
