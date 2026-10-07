@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useOptionalSession } from '../auth/SessionProvider'
 import { InvitePanel } from '../components/InvitePanel'
 import { useStore } from '../data/StoreProvider'
-import { Team, looksLikeEmail, normalizeEmail, type Invite, type Member } from '../data/team'
+import { EmailInUseError, Team, looksLikeEmail, normalizeEmail, type Invite, type Member } from '../data/team'
 import type { Product, ProductGroup } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/messages'
@@ -46,28 +46,11 @@ export function SettingsScreen() {
       {ready && session && (
         <section className="group">
           <h2 className="group__title">{t('business')}</h2>
-          <div className="card">
-            <div className="card__title">{ready.business.name}</div>
-            <p className="muted">
-              {t('yourRole', { role: t(ready.business.role === 'owner' ? 'roleOwner' : 'roleStaff') })}
-            </p>
-            {ready.businesses.length > 1 && (
-              <label className="field">
-                <span className="field__label">{t('switchBusiness')}</span>
-                <select
-                  className="field__input"
-                  value={ready.business.id}
-                  onChange={(e) => session.switchBusiness(e.target.value)}
-                >
-                  {ready.businesses.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
+          <BusinessCard
+            name={ready.business.name}
+            isOwner={ready.business.role === 'owner'}
+            onRename={(name) => session.renameBusiness(name)}
+          />
         </section>
       )}
 
@@ -112,6 +95,46 @@ export function SettingsScreen() {
             </button>
           </div>
         </section>
+      )}
+    </div>
+  )
+}
+
+function BusinessCard(props: { name: string; isOwner: boolean; onRename(name: string): Promise<void> }) {
+  const { t } = useI18n()
+  const [editing, setEditing] = useState(false)
+
+  if (editing) {
+    return (
+      <div className="card">
+        <NameForm
+          label={t('businessName')}
+          initial={props.name}
+          maxLength={80}
+          onCancel={() => setEditing(false)}
+          onSave={async (name) => {
+            try {
+              await props.onRename(name)
+              setEditing(false)
+            } catch {
+              window.alert(t('actionFailed'))
+            }
+          }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="card business">
+      <div>
+        <div className="card__title">{props.name}</div>
+        <p className="muted">{t('yourRole', { role: t(props.isOwner ? 'roleOwner' : 'roleStaff') })}</p>
+      </div>
+      {props.isOwner && (
+        <button type="button" className="btn btn--secondary" onClick={() => setEditing(true)}>
+          {t('rename')}
+        </button>
       )}
     </div>
   )
@@ -169,6 +192,8 @@ function ProductsSection() {
               onToggleHidden={() => saveGroup({ ...group, archived: !group.archived })}
               onMoveUp={gi > 0 ? () => move(sortedGroups, gi, -1, saveGroupRaw) : undefined}
               onMoveDown={gi < sortedGroups.length - 1 ? () => move(sortedGroups, gi, 1, saveGroupRaw) : undefined}
+              onDelete={() => change(() => store.deleteGroup(group.id))}
+              deleteConfirm={t('deleteGroupConfirm', { name: group.name, count: groupProducts.length })}
             />
             {groupProducts.map((product, pi) => (
               <EditableRow
@@ -183,6 +208,8 @@ function ProductsSection() {
                 onMoveDown={
                   pi < groupProducts.length - 1 ? () => move(groupProducts, pi, 1, saveProductRaw) : undefined
                 }
+                onDelete={() => change(() => store.deleteProduct(product.id))}
+                deleteConfirm={t('deleteProductConfirm', { name: product.name })}
               />
             ))}
             <AddButton
@@ -229,7 +256,7 @@ function TeamSection({ team, myEmail, businessName }: { team: Team; myEmail: str
   const [members, setMembers] = useState<Member[] | null>(null)
   const [invites, setInvites] = useState<Invite[]>([])
   const [email, setEmail] = useState('')
-  const [error, setError] = useState<'emailInvalid' | 'actionFailed' | null>(null)
+  const [error, setError] = useState<'emailInvalid' | 'emailInUse' | 'actionFailed' | null>(null)
   // Which invite's send panel is open, and whether it was just added.
   const [sharing, setSharing] = useState<{ email: string; justAdded: boolean } | null>(null)
 
@@ -253,8 +280,8 @@ function TeamSection({ team, myEmail, businessName }: { team: Team; myEmail: str
       await fn()
       await load()
       return true
-    } catch {
-      setError('actionFailed')
+    } catch (err) {
+      setError(err instanceof EmailInUseError ? 'emailInUse' : 'actionFailed')
       return false
     }
   }
@@ -350,7 +377,7 @@ function TeamSection({ team, myEmail, businessName }: { team: Team; myEmail: str
               spellCheck={false}
               placeholder={t('emailPlaceholder')}
               value={email}
-              aria-invalid={error === 'emailInvalid'}
+              aria-invalid={error === 'emailInvalid' || error === 'emailInUse'}
               onChange={(e) => {
                 setEmail(e.target.value)
                 setError(null)
@@ -379,6 +406,9 @@ interface EditableRowProps {
   onToggleHidden(): Promise<void>
   onMoveUp?: () => Promise<void>
   onMoveDown?: () => Promise<void>
+  onDelete(): Promise<void>
+  /** Shown before deleting; says exactly what will be lost. */
+  deleteConfirm: string
 }
 
 /** A list row that opens into an editor when tapped. */
@@ -430,6 +460,15 @@ function EditableRow(props: EditableRowProps) {
             ↓
           </button>
         )}
+        <button
+          type="button"
+          className="btn btn--danger row-editor__delete"
+          onClick={() => {
+            if (window.confirm(props.deleteConfirm)) void props.onDelete()
+          }}
+        >
+          {t('delete')}
+        </button>
       </div>
     </div>
   )
@@ -465,11 +504,13 @@ interface NameFormProps {
   placeholder?: string
   /** Defaults to "Cancel". */
   cancelLabel?: string
+  /** Matches the database limit: 60 for products and groups, 80 for a business. */
+  maxLength?: number
   onSave(name: string): Promise<void>
   onCancel(): void
 }
 
-function NameForm({ label, initial = '', placeholder, cancelLabel, onSave, onCancel }: NameFormProps) {
+function NameForm({ label, initial = '', placeholder, cancelLabel, maxLength = 60, onSave, onCancel }: NameFormProps) {
   const { t } = useI18n()
   const [name, setName] = useState(initial)
   const [error, setError] = useState(false)
@@ -494,7 +535,7 @@ function NameForm({ label, initial = '', placeholder, cancelLabel, onSave, onCan
           value={name}
           placeholder={placeholder}
           autoFocus
-          maxLength={60}
+          maxLength={maxLength}
           aria-invalid={error}
           onChange={(e) => {
             setName(e.target.value)

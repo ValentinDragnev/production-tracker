@@ -34,4 +34,8 @@ export interface DataStore {
   saveEntry(entry: DailyEntry): Promise<void>
   saveGroup(group: ProductGroup): Promise<void>
   saveProduct(product: Product): Promise<void>
+  /** Permanently deletes a group with all its products and their numbers. */
+  deleteGroup(id: string): Promise<void>
+  /** Permanently deletes a product and all its numbers. */
+  deleteProduct(id: string): Promise<void>
 }

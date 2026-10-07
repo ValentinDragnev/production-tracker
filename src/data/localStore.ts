@@ -52,6 +52,25 @@ export class LocalStore implements DataStore {
     this.persist()
   }
 
+  async deleteGroup(id: string) {
+    const productIds = this.snapshot.products.filter((p) => p.groupId === id).map((p) => p.id)
+    this.snapshot.groups = this.snapshot.groups.filter((g) => g.id !== id)
+    this.removeProducts(productIds)
+  }
+
+  async deleteProduct(id: string) {
+    this.removeProducts([id])
+  }
+
+  private removeProducts(ids: string[]) {
+    const gone = new Set(ids)
+    this.snapshot.products = this.snapshot.products.filter((p) => !gone.has(p.id))
+    for (const [key, entry] of Object.entries(this.snapshot.entries)) {
+      if (gone.has(entry.productId)) delete this.snapshot.entries[key]
+    }
+    this.persist()
+  }
+
   /** Wipes local data and reseeds the sample business. */
   reset() {
     this.snapshot = seed()

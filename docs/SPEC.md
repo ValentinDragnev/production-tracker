@@ -29,8 +29,9 @@ throw away for each product, so they can't adjust production.
 
 1. **Login**: enter email, get a code, enter the code. A new user creates a business
    (just a name). An invited email lands straight in that business as staff.
-2. **Products & groups** (owner): add, rename, reorder or archive groups
-   (e.g. Хляб, Баници, Сладкиши) and products in them. Archiving never deletes history.
+2. **Products & groups** (owner): add, rename, reorder, hide or delete groups
+   (e.g. Хляб, Баници, Сладкиши) and products in them. Hiding keeps history;
+   deleting removes the numbers too, after a warning.
 3. **Today screen** (everyone): products listed under their group. Each product has
    two big number fields, **Произведено** and **Изхвърлено**, with large +/−
    buttons. Values save automatically. A date picker lets you fix past days.
@@ -67,6 +68,13 @@ Access rules (enforced in the database with row-level security, see
   caller the owner. Invites turn into memberships through `accept_invites()`,
   which runs after every login and matches the verified login email.
 - Logged-out visitors have no table access at all.
+- One email belongs to at most one business, as owner or staff (unique
+  membership per user). Emails already in a business, or already invited by
+  another business, can't be invited; `create_business()` refuses callers who
+  already belong to one. Removing staff frees their email again.
+- Owners can rename the business, and delete groups and products. Deleting is
+  permanent and cascades (group → products → daily numbers); hiding stays the
+  default for products that are only paused.
 
 ## UX rules
 

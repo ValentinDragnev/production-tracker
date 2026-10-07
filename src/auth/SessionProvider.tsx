@@ -2,8 +2,6 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Role } from '../data/team'
 
-const BUSINESS_KEY = 'production-tracker:business'
-
 export interface BusinessMembership {
   id: string
   name: string
@@ -15,14 +13,14 @@ export type SessionState =
   | { status: 'signedOut' }
   | { status: 'error' }
   | { status: 'needsBusiness'; email: string }
-  | { status: 'ready'; email: string; business: BusinessMembership; businesses: BusinessMembership[] }
+  | { status: 'ready'; email: string; business: BusinessMembership }
 
 interface SessionContextValue {
   state: SessionState
   client: SupabaseClient
   signOut(): Promise<void>
   createBusiness(name: string): Promise<void>
-  switchBusiness(id: string): void
+  renameBusiness(name: string): Promise<void>
   retry(): void
 }
 
@@ -42,7 +40,8 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
   const userId = session?.user.id
   const email = session?.user.email ?? ''
 
-  // After login: join any businesses we were invited to, then load memberships.
+  // After login: join the business that invited us (if any), then load ours.
+  // Each email belongs to at most one business; the database enforces it.
   const loadBusinesses = useCallback(async () => {
     if (!userId) return
     setState({ status: 'loading' })
@@ -54,21 +53,16 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
         .from('memberships')
         .select('role, businesses ( id, name )')
         .eq('user_id', userId)
-        .order('created_at')
+        .maybeSingle()
       if (error) throw error
 
-      const businesses = (data as unknown as { role: Role; businesses: { id: string; name: string } }[]).map((m) => ({
-        id: m.businesses.id,
-        name: m.businesses.name,
-        role: m.role,
-      }))
-      if (businesses.length === 0) {
+      const membership = data as unknown as { role: Role; businesses: { id: string; name: string } } | null
+      if (!membership) {
         setState({ status: 'needsBusiness', email })
         return
       }
-      const saved = readSavedBusiness()
-      const business = businesses.find((b) => b.id === saved) ?? businesses[0]
-      setState({ status: 'ready', email, business, businesses })
+      const { id, name } = membership.businesses
+      setState({ status: 'ready', email, business: { id, name, role: membership.role } })
     } catch {
       setState({ status: 'error' })
     }
@@ -90,21 +84,19 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
     state,
     client,
     async signOut() {
-      saveBusiness(null)
       await client.auth.signOut()
     },
     async createBusiness(name) {
-      const { data, error } = await client.rpc('create_business', { business_name: name })
-      if (error) throw error
-      saveBusiness(data as string)
+      const { error } = await client.rpc('create_business', { business_name: name })
+      // Already in a business (e.g. invited meanwhile): just load that one.
+      if (error && error.message !== 'already_in_business') throw error
       await loadBusinesses()
     },
-    switchBusiness(id) {
+    async renameBusiness(name) {
       if (state.status !== 'ready') return
-      const business = state.businesses.find((b) => b.id === id)
-      if (!business) return
-      saveBusiness(id)
-      setState({ ...state, business })
+      const { error } = await client.from('businesses').update({ name }).eq('id', state.business.id)
+      if (error) throw error
+      setState({ ...state, business: { ...state.business, name } })
     },
     retry() {
       setAttempt((a) => a + 1)
@@ -123,21 +115,4 @@ export function useSession(): SessionContextValue {
 /** Like useSession, but returns null in demo mode (no SessionProvider). */
 export function useOptionalSession(): SessionContextValue | null {
   return useContext(SessionContext)
-}
-
-function readSavedBusiness(): string | null {
-  try {
-    return localStorage.getItem(BUSINESS_KEY)
-  } catch {
-    return null
-  }
-}
-
-function saveBusiness(id: string | null) {
-  try {
-    if (id) localStorage.setItem(BUSINESS_KEY, id)
-    else localStorage.removeItem(BUSINESS_KEY)
-  } catch {
-    // Not remembered; the first business is used next time.
-  }
 }

@@ -91,6 +91,17 @@ export class SupabaseStore implements DataStore {
     if (error) throw error
   }
 
+  // Products and numbers go with them through cascading foreign keys.
+  async deleteGroup(id: string): Promise<void> {
+    const { error } = await this.client.from('product_groups').delete().eq('id', id).eq('business_id', this.businessId)
+    if (error) throw error
+  }
+
+  async deleteProduct(id: string): Promise<void> {
+    const { error } = await this.client.from('products').delete().eq('id', id).eq('business_id', this.businessId)
+    if (error) throw error
+  }
+
   async saveProduct(product: Product): Promise<void> {
     const { error } = await this.client.from('products').upsert({
       id: product.id,

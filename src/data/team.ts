@@ -47,7 +47,8 @@ export class Team {
     const { error } = await this.client
       .from('invites')
       .insert({ business_id: this.businessId, email: normalizeEmail(email), role: 'staff' })
-    // Already invited is fine: there's no update policy, so no upsert.
+    if (error?.message === 'email_in_use') throw new EmailInUseError()
+    // Already invited here is fine: there's no update policy, so no upsert.
     if (error && error.code !== '23505') throw error
   }
 
@@ -63,6 +64,13 @@ export class Team {
       .eq('business_id', this.businessId)
       .eq('user_id', userId)
     if (error) throw error
+  }
+}
+
+/** The email already belongs to a business (or another business invited it). */
+export class EmailInUseError extends Error {
+  constructor() {
+    super('email_in_use')
   }
 }
 

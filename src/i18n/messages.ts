@@ -90,7 +90,6 @@ const bg = {
   yourRole: 'Вие сте {role}',
   roleOwner: 'собственик',
   roleStaff: 'служител',
-  switchBusiness: 'Смени бизнеса',
   staff: 'Служители',
   staffHint: 'Служителите въвеждат числата. Не могат да променят продуктите.',
   addStaff: 'Добави служител',
@@ -116,6 +115,12 @@ const bg = {
   staffProductsHint: 'Продуктите се променят от собственика.',
   noProductsStaffHint: 'Помолете собственика да добави продукти.',
   actionFailed: 'Не стана. Опитайте пак.',
+  emailInUse: 'Този имейл вече е регистриран в приложението (като собственик или служител) и не може да бъде добавен.',
+  delete: 'Изтрий',
+  deleteProductConfirm:
+    '„{name}“ и всичките му числа ще бъдат изтрити завинаги. Ако просто вече не го правите, по-добре го скрийте. Да се изтрие ли?',
+  deleteGroupConfirm:
+    'Групата „{name}“ и продуктите в нея ({count}) ще бъдат изтрити завинаги, заедно с всичките им числа. Да се изтрие ли?',
 }
 
 export type MessageKey = keyof typeof bg
@@ -212,7 +217,6 @@ const en: Record<MessageKey, string> = {
   yourRole: 'Your role: {role}',
   roleOwner: 'owner',
   roleStaff: 'staff',
-  switchBusiness: 'Switch business',
   staff: 'Staff',
   staffHint: "Staff enter the numbers. They can't change products.",
   addStaff: 'Add staff',
@@ -238,6 +242,12 @@ const en: Record<MessageKey, string> = {
   staffProductsHint: 'Only the owner can change products.',
   noProductsStaffHint: 'Ask the owner to add products.',
   actionFailed: "That didn't work. Try again.",
+  emailInUse: "This email is already registered in the app (as an owner or staff) and can't be added.",
+  delete: 'Delete',
+  deleteProductConfirm:
+    '"{name}" and all its numbers will be deleted for good. If you just stopped making it, hide it instead. Delete it?',
+  deleteGroupConfirm:
+    'The group "{name}" and its products ({count}) will be deleted for good, with all their numbers. Delete it?',
 }
 
 export const messages = { bg, en }

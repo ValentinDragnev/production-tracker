@@ -852,3 +852,34 @@ select.field__input {
 .invite__hint {
   margin: 10px 0 0;
 }
+
+/* --- Business card and deleting ------------------------------------------ */
+
+.business {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.business .card__title {
+  overflow-wrap: anywhere;
+}
+
+.business .muted {
+  margin: 2px 0 0;
+}
+
+.btn--danger {
+  background: var(--surface);
+  border-color: var(--high-bg);
+  color: var(--high-text);
+}
+
+.row-editor__actions {
+  flex-wrap: wrap;
+}
+
+.row-editor__delete {
+  margin-left: auto;
+}
