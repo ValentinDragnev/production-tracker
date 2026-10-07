@@ -45,3 +45,10 @@ export function weekDates(date: ISODate): ISODate[] {
 export function formatDate(date: ISODate, locale: string, options: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' }).format(toUtc(date))
 }
+
+/** A moment in time (e.g. a subscription end) as a Sofia calendar date. */
+export function formatMoment(moment: string | Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: TIME_ZONE }).format(
+    new Date(moment),
+  )
+}

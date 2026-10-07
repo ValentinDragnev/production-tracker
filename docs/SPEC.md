@@ -42,6 +42,24 @@ throw away for each product, so they can't adjust production.
    "Average made 120, average thrown away 25 → try ~95–100."
 6. **Staff** (owner): invite by email, remove.
 
+## Subscriptions and admin (added 2026-10-07)
+
+- Every new business gets a **30-day free trial**, then pays **monthly or
+  yearly**. Prices and bank-transfer details are set in the admin panel and
+  shown to owners when they need to pay.
+- When neither the trial nor a paid period covers today, or the admin locked
+  the business, it can still **read reports but not enter numbers**. Enforced
+  in the database (`private.is_active`), not just the UI. Nothing is deleted.
+- Owners see a reminder in the last 7 days and a "how to pay" section in
+  Settings. Staff are told to ask the owner.
+- **Admin panel** (platform owner only, by email in `platform_admins`):
+  customer list with status, activity and filters; per customer: record or
+  delete payments, extend the trial, lock/unlock, phone and notes; prices and
+  payment details. Payments extend access from the end of the current period
+  (or from today if it already ended).
+- Next: automatic reminder emails (7 days and 1 day before), then card
+  payments through Stripe alongside bank transfer.
+
 ## Out of scope for v1
 
 Sales and prices, money lost, multiple locations, offline-first sync, exports,

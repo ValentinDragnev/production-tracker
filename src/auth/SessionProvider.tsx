@@ -1,6 +1,8 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { amIAdmin, loadPriceSettings, loadSubscription, type PriceSettings } from '../data/billing'
 import type { Role } from '../data/team'
+import type { Subscription } from '../lib/subscription'
 
 export interface BusinessMembership {
   id: string
@@ -13,14 +15,24 @@ export type SessionState =
   | { status: 'signedOut' }
   | { status: 'error' }
   | { status: 'needsBusiness'; email: string }
-  | { status: 'ready'; email: string; business: BusinessMembership }
+  | {
+      status: 'ready'
+      email: string
+      business: BusinessMembership
+      subscription: Subscription
+      prices: PriceSettings
+    }
 
 interface SessionContextValue {
   state: SessionState
   client: SupabaseClient
+  /** The platform owner, who gets the admin panel. */
+  isAdmin: boolean
   signOut(): Promise<void>
   createBusiness(name: string): Promise<void>
   renameBusiness(name: string): Promise<void>
+  /** Re-reads subscription and prices, e.g. after a save was refused. */
+  refreshBilling(): Promise<void>
   retry(): void
 }
 
@@ -30,6 +42,7 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [state, setState] = useState<SessionState>({ status: 'loading' })
   const [attempt, setAttempt] = useState(0)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     void client.auth.getSession().then(({ data }) => setSession(data.session))
@@ -48,6 +61,7 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
     try {
       const invites = await client.rpc('accept_invites')
       if (invites.error) throw invites.error
+      void amIAdmin(client).then(setIsAdmin)
 
       const { data, error } = await client
         .from('memberships')
@@ -62,7 +76,8 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
         return
       }
       const { id, name } = membership.businesses
-      setState({ status: 'ready', email, business: { id, name, role: membership.role } })
+      const [subscription, prices] = await Promise.all([loadSubscription(client, id), loadPriceSettings(client)])
+      setState({ status: 'ready', email, business: { id, name, role: membership.role }, subscription, prices })
     } catch {
       setState({ status: 'error' })
     }
@@ -75,14 +90,37 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
     if (signedIn === undefined) return
     if (!signedIn) {
       setState({ status: 'signedOut' })
+      setIsAdmin(false)
       return
     }
     void loadBusinesses()
   }, [signedIn, loadBusinesses, attempt])
 
+  const businessId = state.status === 'ready' ? state.business.id : null
+  const refreshBilling = useCallback(async () => {
+    if (!businessId) return
+    try {
+      const [subscription, prices] = await Promise.all([loadSubscription(client, businessId), loadPriceSettings(client)])
+      setState((s) => (s.status === 'ready' && s.business.id === businessId ? { ...s, subscription, prices } : s))
+    } catch {
+      // Keep what we had; the next refresh will try again.
+    }
+  }, [client, businessId])
+
+  // Pick up a payment (or a lock) when the app comes back to the foreground.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshBilling()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [refreshBilling])
+
   const value: SessionContextValue = {
     state,
     client,
+    isAdmin,
+    refreshBilling,
     async signOut() {
       await client.auth.signOut()
     },

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EmptyState, PeriodNav } from '../components/common'
 import { Stepper } from '../components/Stepper'
+import { SubscriptionNotice } from '../components/Subscription'
 import { useStore } from '../data/StoreProvider'
 import type { DailyEntry, ISODate } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
@@ -13,9 +14,9 @@ type Counts = Pick<DailyEntry, 'produced' | 'wasted'>
 const SAVE_DELAY_MS = 500
 const EMPTY: Counts = { produced: 0, wasted: 0 }
 
-export function TodayScreen() {
+export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
   const { t, locale } = useI18n()
-  const { store, groups, products, role } = useStore()
+  const { store, groups, products, role, canEdit, recheckAccess } = useStore()
   const today = todayInSofia()
   const [date, setDate] = useState<ISODate>(today)
   // Tagged with its date so we never show (or edit) one day's numbers under another.
@@ -36,9 +37,11 @@ export function TodayScreen() {
         if (pending.current.size === 0) setStatus('saved')
       } catch {
         setStatus('error')
+        // Maybe the subscription just ended: re-check so the screen says so.
+        recheckAccess()
       }
     },
-    [store],
+    [store, recheckAccess],
   )
 
   // Save anything still waiting before switching day or leaving the screen.
@@ -110,6 +113,8 @@ export function TodayScreen() {
         }
       />
 
+      <SubscriptionNotice onHowToPay={onHowToPay} />
+
       <div className={`save-status save-status--${status}`} role="status">
         {status === 'saving' && t('saving')}
         {status === 'saved' && `✓ ${t('saved')}`}
@@ -133,6 +138,7 @@ export function TodayScreen() {
                   label={t('produced')}
                   productName={product.name}
                   tone="produced"
+                  disabled={!canEdit}
                   value={c.produced}
                   onChange={(v) => update(product.id, 'produced', v)}
                 />
@@ -140,6 +146,7 @@ export function TodayScreen() {
                   label={t('wasted')}
                   productName={product.name}
                   tone="wasted"
+                  disabled={!canEdit}
                   value={c.wasted}
                   onChange={(v) => update(product.id, 'wasted', v)}
                 />

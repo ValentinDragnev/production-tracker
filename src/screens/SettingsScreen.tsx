@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useOptionalSession } from '../auth/SessionProvider'
 import { InvitePanel } from '../components/InvitePanel'
+import { SubscriptionSection } from '../components/Subscription'
 import { useStore } from '../data/StoreProvider'
 import { EmailInUseError, Team, looksLikeEmail, normalizeEmail, type Invite, type Member } from '../data/team'
 import type { Product, ProductGroup } from '../data/types'
@@ -53,6 +54,8 @@ export function SettingsScreen() {
           />
         </section>
       )}
+
+      <SubscriptionSection />
 
       {role === 'owner' ? (
         <ProductsSection />

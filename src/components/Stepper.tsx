@@ -8,10 +8,12 @@ interface Props {
   value: number
   onChange(value: number): void
   tone: 'produced' | 'wasted'
+  /** Read-only, e.g. when the subscription has ended. */
+  disabled?: boolean
 }
 
 /** A big "− number +" control. The number can also be typed directly. */
-export function Stepper({ label, productName, value, onChange, tone }: Props) {
+export function Stepper({ label, productName, value, onChange, tone, disabled = false }: Props) {
   const { t } = useI18n()
   // Local text so the field can be empty while the user is typing.
   const [text, setText] = useState(String(value))
@@ -30,6 +32,7 @@ export function Stepper({ label, productName, value, onChange, tone }: Props) {
         <button
           type="button"
           className="stepper__btn"
+          disabled={disabled}
           aria-label={`${t('removeOne')}: ${fullLabel}`}
           onClick={() => onChange(Math.max(0, value - 1))}
         >
@@ -40,6 +43,7 @@ export function Stepper({ label, productName, value, onChange, tone }: Props) {
           inputMode="numeric"
           pattern="[0-9]*"
           aria-label={fullLabel}
+          readOnly={disabled}
           value={text}
           onFocus={(e) => e.target.select()}
           onChange={(e) => {
@@ -53,6 +57,7 @@ export function Stepper({ label, productName, value, onChange, tone }: Props) {
         <button
           type="button"
           className="stepper__btn stepper__btn--plus"
+          disabled={disabled}
           aria-label={`${t('addOne')}: ${fullLabel}`}
           onClick={() => onChange(value + 1)}
         >

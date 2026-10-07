@@ -149,7 +149,7 @@ export function LoginScreen() {
   )
 }
 
-export function BusinessSetupScreen({ email }: { email: string }) {
+export function BusinessSetupScreen({ email, onOpenAdmin }: { email: string; onOpenAdmin?: () => void }) {
   const { t } = useI18n()
   const { createBusiness, signOut } = useSession()
   const [name, setName] = useState('')
@@ -200,6 +200,11 @@ export function BusinessSetupScreen({ email }: { email: string }) {
         <button type="button" className="link-btn" onClick={() => void signOut()}>
           {t('signOut')}
         </button>
+        {onOpenAdmin && (
+          <button type="button" className="link-btn" onClick={onOpenAdmin}>
+            {t('adminOpen')}
+          </button>
+        )}
       </div>
     </AuthLayout>
   )

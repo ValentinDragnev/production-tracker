@@ -7,7 +7,8 @@
 --
 -- Prints "ALL RLS CHECKS PASSED", or stops at the first failing check.
 --
--- People: a = owner of Bakery A, b = owner of Bakery B, c = staff at A.
+-- People: a = owner of Bakery A, b = owner of Bakery B, c = staff at A,
+-- d = the app's admin (platform owner).
 
 begin;
 
@@ -15,7 +16,9 @@ begin;
 insert into auth.users (id, email, aud, role) values
   ('00000000-0000-4000-a000-00000000000a', 'a@rls-test.invalid', 'authenticated', 'authenticated'),
   ('00000000-0000-4000-a000-00000000000b', 'b@rls-test.invalid', 'authenticated', 'authenticated'),
-  ('00000000-0000-4000-a000-00000000000c', 'c@rls-test.invalid', 'authenticated', 'authenticated');
+  ('00000000-0000-4000-a000-00000000000c', 'c@rls-test.invalid', 'authenticated', 'authenticated'),
+  ('00000000-0000-4000-a000-00000000000d', 'd@rls-test.invalid', 'authenticated', 'authenticated');
+insert into public.platform_admins (email) values ('d@rls-test.invalid');
 
 -- Helpers live in a scratch schema that disappears with the rollback.
 create schema rls_test;
@@ -37,14 +40,22 @@ begin
   end if;
 end $$;
 
--- Runs a statement that must be refused with the given error message.
+-- Runs a statement that must fail with the given error message (or, when
+-- reason is 'denied', with any permission / row-level security error).
 create function rls_test.expect_refused(stmt text, reason text, label text) returns void language plpgsql as $$
+declare
+  ran boolean := false;
 begin
-  execute stmt;
-  raise exception 'RLS CHECK FAILED: %', label;
-exception when raise_exception then
-  if sqlerrm <> reason then
-    raise exception 'RLS CHECK FAILED: % (got "%")', label, sqlerrm;
+  begin
+    execute stmt;
+    ran := true;
+  exception when others then
+    if not (sqlerrm = reason or (reason = 'denied' and sqlstate = '42501')) then
+      raise exception 'RLS CHECK FAILED: % (got "%")', label, sqlerrm;
+    end if;
+  end;
+  if ran then
+    raise exception 'RLS CHECK FAILED: %', label;
   end if;
 end $$;
 
@@ -235,7 +246,114 @@ select rls_test.act_as('c');
 set local role authenticated;
 select rls_test.expect((select public.accept_invites() = 1), 'removed staff can join another business');
 
--- 8. Logged-out visitors get nothing.
+-- 8. Subscriptions: a 30-day trial, then only the admin can extend or lock.
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+select rls_test.expect(
+  (select trial_ends_at between now() + interval '29 days' and now() + interval '31 days' from public.subscriptions),
+  'new business gets a 30-day trial');
+select rls_test.expect((select count(*) = 1 from public.app_settings), 'members can read prices');
+update public.subscriptions set locked = true, paid_until = now() + interval '10 years';
+select rls_test.expect((select not locked and paid_until is null from public.subscriptions),
+  'members cannot change their subscription');
+select rls_test.expect_refused('select * from public.payments', 'denied', 'members can read payments');
+select rls_test.expect_refused('select * from public.customer_notes', 'denied', 'members can read admin notes');
+select rls_test.expect_refused('select * from public.platform_admins', 'denied', 'members can read the admin list');
+select rls_test.expect_refused('select * from public.admin_customers()', 'not_admin', 'owner opened the admin overview');
+select rls_test.expect_refused(
+  format('select public.admin_record_payment(%L, 0, 12, %L)', current_setting('test.biz_a'), 'cash'),
+  'not_admin', 'owner recorded their own payment');
+select rls_test.expect_refused(
+  format('select public.admin_set_trial_end(%L, now() + interval ''5 years'')', current_setting('test.biz_a')),
+  'not_admin', 'owner extended their own trial');
+select rls_test.expect((select not public.am_i_admin()), 'owner is not an admin');
+insert into public.product_groups (id, business_id, name)
+  values ('00000000-0000-4000-b000-0000000000a3', current_setting('test.biz_a')::uuid, 'Pastry');
+insert into public.products (id, business_id, group_id, name)
+  values ('00000000-0000-4000-c000-0000000000a3', current_setting('test.biz_a')::uuid,
+          '00000000-0000-4000-b000-0000000000a3', 'Croissant');
+
+-- The admin sees every business and locks A.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select rls_test.expect(public.am_i_admin(), 'admin is recognised');
+select rls_test.expect((select count(*) = 2 from public.admin_customers()), 'admin sees all businesses');
+select rls_test.expect(
+  (select owner_email = 'a@rls-test.invalid' from public.admin_customers() where business_id = current_setting('test.biz_a')::uuid),
+  'admin overview shows the owner');
+select rls_test.expect((select count(*) = 0 from public.products), 'admin does not see business data directly');
+select public.admin_set_locked(current_setting('test.biz_a')::uuid, true);
+
+-- Locked: A can read but not enter numbers.
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+select rls_test.expect((select count(*) = 1 from public.products), 'locked business can still read');
+select rls_test.expect_refused(
+  format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, %L, 10, 1)',
+    current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3', '2026-10-07'),
+  'denied', 'locked business entered numbers');
+
+-- Unlocked but trial over: still no entries until a payment is recorded.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_set_locked(current_setting('test.biz_a')::uuid, false);
+select public.admin_set_trial_end(current_setting('test.biz_a')::uuid, now() - interval '1 day');
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+select rls_test.expect_refused(
+  format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, %L, 10, 1)',
+    current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3', '2026-10-07'),
+  'denied', 'expired trial entered numbers');
+
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select set_config('test.paid_until',
+  public.admin_record_payment(current_setting('test.biz_a')::uuid, 15, 1, 'bank')::text, true);
+select rls_test.expect(
+  current_setting('test.paid_until')::timestamptz = now() + interval '1 month',
+  'a monthly payment after expiry runs a month from today');
+-- Paying early, during the trial, adds the paid period after the trial.
+select rls_test.expect(
+  (select public.admin_record_payment(current_setting('test.biz_b')::uuid, 150, 12, 'card')
+     = (select trial_ends_at from public.admin_customers() where business_id = current_setting('test.biz_b')::uuid)
+       + interval '12 months'),
+  'a yearly payment during the trial starts when the trial ends');
+select rls_test.expect(
+  (select plan = 'monthly' and total_paid = 15 from public.admin_customers()
+   where business_id = current_setting('test.biz_a')::uuid),
+  'payment shows in the overview');
+select public.admin_save_notes(current_setting('test.biz_a')::uuid, '0888 123 456', 'Paid by bank');
+select public.admin_save_settings(15, 150, 'IBAN BG00 TEST', 'IBAN BG00 TEST');
+
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+insert into public.daily_entries (business_id, product_id, date, produced, wasted)
+  values (current_setting('test.biz_a')::uuid, '00000000-0000-4000-c000-0000000000a3', '2026-10-07', 10, 1);
+select rls_test.expect((select count(*) = 1 from public.daily_entries), 'paid business enters numbers again');
+select rls_test.expect((select monthly_price = 15 from public.app_settings), 'members see the prices the admin set');
+select rls_test.expect((select paid_until > now() from public.subscriptions), 'member sees their paid period');
+
+-- Deleting the payment (recorded by mistake) takes access away again.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_delete_payment((select id from public.admin_payments(current_setting('test.biz_a')::uuid)));
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+select rls_test.expect_refused(
+  format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, %L, 10, 1)',
+    current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3', '2026-10-08'),
+  'denied', 'numbers entered after the payment was removed');
+
+-- 9. Logged-out visitors get nothing.
 reset role;
 set local role anon;
 do $$
