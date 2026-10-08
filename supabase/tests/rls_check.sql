@@ -320,7 +320,7 @@ select rls_test.expect(
   'a monthly payment after expiry runs a month from today');
 -- Paying early, during the trial, adds the paid period after the trial.
 select rls_test.expect(
-  (select public.admin_record_payment(current_setting('test.biz_b')::uuid, 150, 12, 'card')
+  (select public.admin_record_payment(current_setting('test.biz_b')::uuid, 150, 12, 'revolut')
      = (select trial_ends_at from public.admin_customers() where business_id = current_setting('test.biz_b')::uuid)
        + interval '12 months'),
   'a yearly payment during the trial starts when the trial ends');
@@ -329,7 +329,7 @@ select rls_test.expect(
    where business_id = current_setting('test.biz_a')::uuid),
   'payment shows in the overview');
 select public.admin_save_notes(current_setting('test.biz_a')::uuid, '0888 123 456', 'Paid by bank');
-select public.admin_save_settings(15, 150, 'IBAN BG00 TEST', 'IBAN BG00 TEST');
+select public.admin_save_settings(15, 150, 'IBAN BG00 TEST', 'IBAN BG00 TEST', 'https://revolut.me/test', 'Help@Example.com');
 
 reset role;
 select rls_test.act_as('a');
@@ -338,6 +338,12 @@ insert into public.daily_entries (business_id, product_id, date, produced, waste
   values (current_setting('test.biz_a')::uuid, '00000000-0000-4000-c000-0000000000a3', '2026-10-07', 10, 1);
 select rls_test.expect((select count(*) = 1 from public.daily_entries), 'paid business enters numbers again');
 select rls_test.expect((select monthly_price = 15 from public.app_settings), 'members see the prices the admin set');
+select rls_test.expect(
+  (select revolut_link = 'https://revolut.me/test' and contact_email = 'help@example.com' from public.app_settings),
+  'members see the Revolut link and contact email');
+select rls_test.expect_refused(
+  'select public.admin_save_settings(1, 1, '''', '''', ''https://evil.example'', '''')',
+  'not_admin', 'owner changed the payment link');
 select rls_test.expect((select paid_until > now() from public.subscriptions), 'member sees their paid period');
 
 -- Deleting the payment (recorded by mistake) takes access away again.

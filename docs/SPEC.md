@@ -70,8 +70,14 @@ throw away for each product, so they can't adjust production.
   delete payments, extend the trial, lock/unlock, phone and notes; prices and
   payment details. Payments extend access from the end of the current period
   (or from today if it already ended).
-- Next: automatic reminder emails (7 days and 1 day before), then card
-  payments through Stripe alongside bank transfer.
+- Payment: a **Revolut** link (button + QR code, with the business name as
+  the payment reference) and/or bank details, both set in the admin panel.
+  Payments are recorded by the admin (bank, Revolut, card, cash, other);
+  there is no automatic card processing. Stripe was dropped in favour of this.
+- Customer contact: proizvodstvoibrak@gmail.com (editable in the admin
+  panel), shown in Settings → Помощ and next to payment details. It is also
+  meant to be the sender of all emails (login codes, reminders).
+- Next: automatic reminder emails (7 days and 1 day before).
 
 ## Out of scope for v1
 

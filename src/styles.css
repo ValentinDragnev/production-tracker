@@ -1225,3 +1225,61 @@ select.field__input {
 .to-order .stock {
   color: inherit;
 }
+
+/* --- Revolut, contact ----------------------------------------------------- */
+
+.pay-info__revolut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  text-align: center;
+}
+
+.pay-info__revolut .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.pay-info__ref {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pay-info__or {
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+.qr {
+  display: block;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.qr--loading {
+  background: var(--surface-muted);
+}
+
+.contact-line {
+  margin-top: 12px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.card > .contact-line:first-child {
+  margin-top: 0;
+}
+
+.contact-line__link {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.locked .contact-line__link {
+  color: inherit;
+  text-decoration: underline;
+}

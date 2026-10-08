@@ -1,6 +1,7 @@
 import { useOptionalSession } from '../auth/SessionProvider'
 import type { PriceSettings } from '../data/billing'
 import { useI18n } from '../i18n/I18nProvider'
+import { QrCode } from './QrCode'
 import { formatMoment } from '../lib/dates'
 import { canEnterNumbers, needsReminder, subscriptionState, type SubscriptionState } from '../lib/subscription'
 
@@ -14,6 +15,7 @@ function useSubscription() {
     state: subscriptionState(subscription),
     everPaid: subscription.paidUntil !== null,
     prices,
+    businessName: business.name,
     isOwner: business.role === 'owner',
   }
 }
@@ -32,7 +34,7 @@ export function SubscriptionNotice({ onHowToPay }: { onHowToPay(): void }) {
       <div className="locked" role="alert">
         <p className="locked__title">{lockedTitle(sub.state, sub.everPaid, t)}</p>
         <p className="locked__body">{t(sub.isOwner ? 'subOwnerBody' : 'subStaffBody')}</p>
-        {sub.isOwner && <PaymentInfo prices={sub.prices} />}
+        {sub.isOwner && <PaymentInfo prices={sub.prices} reference={sub.businessName} />}
       </div>
     )
   }
@@ -71,13 +73,14 @@ export function SubscriptionSection() {
       <div className={`card${canEnterNumbers(state) ? '' : ' card--alert'}`}>
         <div className="card__title">{line}</div>
         {!canEnterNumbers(state) && <p className="muted">{t(sub.isOwner ? 'subOwnerBody' : 'subStaffBody')}</p>}
-        {sub.isOwner && <PaymentInfo prices={sub.prices} />}
+        {sub.isOwner && <PaymentInfo prices={sub.prices} reference={sub.businessName} />}
       </div>
     </section>
   )
 }
 
-function PaymentInfo({ prices }: { prices: PriceSettings | null }) {
+/** Prices and the ways to pay: Revolut (button + QR), bank details, contact. */
+function PaymentInfo({ prices, reference }: { prices: PriceSettings | null; reference: string }) {
   const { t, lang, locale } = useI18n()
   if (!prices) return <p className="pay-info__text">{t('paymentContact')}</p>
   const money = (n: number) => new Intl.NumberFormat(locale, { style: 'currency', currency: prices.currency }).format(n)
@@ -92,8 +95,48 @@ function PaymentInfo({ prices }: { prices: PriceSettings | null }) {
           {prices.yearlyPrice !== null && <span>{t('priceYearly', { price: money(prices.yearlyPrice) })}</span>}
         </p>
       )}
-      <p className="pay-info__text">{info || t('paymentContact')}</p>
+      {prices.revolutLink && (
+        <div className="pay-info__revolut">
+          <a className="btn btn--primary btn--block" href={prices.revolutLink} target="_blank" rel="noopener noreferrer">
+            {t('payWithRevolut')}
+          </a>
+          <p className="pay-info__ref">{t('paymentReference', { reference })}</p>
+          <p className="muted">{t('scanToPay')}</p>
+          <QrCode value={prices.revolutLink} label={t('payWithRevolut')} />
+        </div>
+      )}
+      {info && prices.revolutLink && <p className="pay-info__or">{t('orBankTransfer')}</p>}
+      {(info || !prices.revolutLink) && <p className="pay-info__text">{info || t('paymentContact')}</p>}
+      {prices.contactEmail && <ContactLine email={prices.contactEmail} />}
     </div>
+  )
+}
+
+export function ContactLine({ email }: { email: string }) {
+  const { t } = useI18n()
+  return (
+    <p className="contact-line">
+      {t('contactUs')}{' '}
+      <a href={`mailto:${email}`} className="contact-line__link">
+        {email}
+      </a>
+    </p>
+  )
+}
+
+/** Settings: where to write with questions. Nothing in demo mode. */
+export function HelpSection() {
+  const { t } = useI18n()
+  const session = useOptionalSession()
+  const email = session?.state.status === 'ready' ? session.state.prices?.contactEmail : ''
+  if (!email) return null
+  return (
+    <section className="group">
+      <h2 className="group__title">{t('help')}</h2>
+      <div className="card">
+        <ContactLine email={email} />
+      </div>
+    </section>
   )
 }
 

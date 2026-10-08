@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useSession } from '../auth/SessionProvider'
 import { Admin, loadPriceSettings, type Customer, type Payment, type PaymentMethod, type PriceSettings } from '../data/billing'
+import { looksLikeEmail } from '../data/team'
 import { useI18n } from '../i18n/I18nProvider'
 import type { MessageKey } from '../i18n/messages'
 import { formatMoment, todayInSofia } from '../lib/dates'
@@ -18,6 +19,7 @@ const FILTERS: { id: Filter; label: MessageKey }[] = [
 
 const METHODS: { id: PaymentMethod; label: MessageKey }[] = [
   { id: 'bank', label: 'methodBank' },
+  { id: 'revolut', label: 'methodRevolut' },
   { id: 'card', label: 'methodCard' },
   { id: 'cash', label: 'methodCash' },
   { id: 'other', label: 'methodOther' },
@@ -501,6 +503,8 @@ function PricesCard(props: { admin: Admin; prices: PriceSettings; onSaved(): Pro
   const [yearly, setYearly] = useState(props.prices.yearlyPrice?.toString() ?? '')
   const [infoBg, setInfoBg] = useState(props.prices.paymentInfoBg)
   const [infoEn, setInfoEn] = useState(props.prices.paymentInfoEn)
+  const [revolut, setRevolut] = useState(props.prices.revolutLink)
+  const [contact, setContact] = useState(props.prices.contactEmail)
   const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
 
   // Empty means "no price shown"; anything else must be a valid amount.
@@ -525,7 +529,9 @@ function PricesCard(props: { admin: Admin; prices: PriceSettings; onSaved(): Pro
           e.preventDefault()
           const m = parse(monthly)
           const y = parse(yearly)
-          if (m === undefined || y === undefined) {
+          const badLink = revolut.trim() !== '' && !/^https:\/\/\S+$/.test(revolut.trim())
+          const badEmail = contact.trim() !== '' && !looksLikeEmail(contact)
+          if (m === undefined || y === undefined || badLink || badEmail) {
             setStatus('error')
             return
           }
@@ -536,6 +542,8 @@ function PricesCard(props: { admin: Admin; prices: PriceSettings; onSaved(): Pro
               yearlyPrice: y,
               paymentInfoBg: infoBg,
               paymentInfoEn: infoEn,
+              revolutLink: revolut.trim(),
+              contactEmail: contact.trim(),
             })
             await props.onSaved()
             setStatus('saved')
@@ -554,6 +562,31 @@ function PricesCard(props: { admin: Admin; prices: PriceSettings; onSaved(): Pro
             <input className="field__input" inputMode="decimal" value={yearly} onChange={changed(setYearly)} />
           </label>
         </div>
+        <label className="field">
+          <span className="field__label">{t('revolutLink')}</span>
+          <input
+            className="field__input"
+            type="url"
+            inputMode="url"
+            autoCapitalize="none"
+            placeholder="https://revolut.me/..."
+            value={revolut}
+            onChange={changed(setRevolut)}
+          />
+          <span className="field__hint">{t('revolutLinkHint')}</span>
+        </label>
+        <label className="field">
+          <span className="field__label">{t('contactEmail')}</span>
+          <input
+            className="field__input"
+            type="email"
+            inputMode="email"
+            autoCapitalize="none"
+            value={contact}
+            onChange={changed(setContact)}
+          />
+          <span className="field__hint">{t('contactEmailHint')}</span>
+        </label>
         <p className="muted">{t('paymentInfoHint')}</p>
         <label className="field">
           <span className="field__label">{t('paymentInfoBg')}</span>

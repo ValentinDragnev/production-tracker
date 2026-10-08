@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useOptionalSession } from '../auth/SessionProvider'
 import { InvitePanel } from '../components/InvitePanel'
 import { UNIT_NAME, UNIT_SHORT } from '../components/labels'
-import { SubscriptionSection } from '../components/Subscription'
+import { HelpSection, SubscriptionSection } from '../components/Subscription'
 import { useStore } from '../data/StoreProvider'
 import { EmailInUseError, Team, looksLikeEmail, normalizeEmail, type Invite, type Member } from '../data/team'
 import type { EntryLabels, Product, ProductGroup, Supply } from '../data/types'
@@ -75,6 +75,8 @@ export function SettingsScreen() {
       {ready && team && role === 'owner' && (
         <TeamSection team={team} myEmail={ready.email} businessName={ready.business.name} />
       )}
+
+      <HelpSection />
 
       {ready && session && (
         <section className="group">

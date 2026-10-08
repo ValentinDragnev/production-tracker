@@ -7,6 +7,10 @@ export interface PriceSettings {
   currency: string
   paymentInfoBg: string
   paymentInfoEn: string
+  /** Revolut payment link (revolut.me/...), or '' when not offered. */
+  revolutLink: string
+  /** Where customers can write to; '' if not set. */
+  contactEmail: string
 }
 
 export async function loadSubscription(client: SupabaseClient, businessId: string): Promise<Subscription> {
@@ -22,7 +26,7 @@ export async function loadSubscription(client: SupabaseClient, businessId: strin
 export async function loadPriceSettings(client: SupabaseClient): Promise<PriceSettings> {
   const { data, error } = await client
     .from('app_settings')
-    .select('monthly_price, yearly_price, currency, payment_info_bg, payment_info_en')
+    .select('monthly_price, yearly_price, currency, payment_info_bg, payment_info_en, revolut_link, contact_email')
     .single()
   if (error) throw error
   return {
@@ -31,6 +35,8 @@ export async function loadPriceSettings(client: SupabaseClient): Promise<PriceSe
     currency: data.currency,
     paymentInfoBg: data.payment_info_bg,
     paymentInfoEn: data.payment_info_en,
+    revolutLink: data.revolut_link,
+    contactEmail: data.contact_email,
   }
 }
 
@@ -42,7 +48,7 @@ export async function amIAdmin(client: SupabaseClient): Promise<boolean> {
 
 // --- Admin -----------------------------------------------------------------
 
-export type PaymentMethod = 'bank' | 'card' | 'cash' | 'other'
+export type PaymentMethod = 'bank' | 'revolut' | 'card' | 'cash' | 'other'
 
 export interface Customer {
   businessId: string
@@ -185,6 +191,8 @@ export class Admin {
       yearly_price: s.yearlyPrice,
       payment_info_bg: s.paymentInfoBg,
       payment_info_en: s.paymentInfoEn,
+      revolut_link: s.revolutLink,
+      contact_email: s.contactEmail,
     })
     if (error) throw error
   }
