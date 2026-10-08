@@ -21,7 +21,7 @@ throw away for each product, so they can't adjust production.
 | Login | Email + 6-digit code (no password). Session lasts months. |
 | Data | Central database (Supabase, EU / Ireland `eu-west-1`) so phone and computer stay in sync. |
 | Language | Bulgarian (default) + English, switchable. |
-| Units | Pieces only (whole numbers). |
+| Units | Per product / supply: бр., кг, л, торби, кутии. kg and l allow 2 decimals. Reports never add different units together. |
 | Roles | Owner + staff. Owner invites staff by email. |
 | Week | Monday–Sunday, timezone Europe/Sofia. |
 
@@ -41,6 +41,19 @@ throw away for each product, so they can't adjust production.
    and a simple suggestion based on the week's average:
    "Average made 120, average thrown away 25 → try ~95–100."
 6. **Staff** (owner): invite by email, remove.
+
+## Stock and wording (added 2026-10-08)
+
+- **Склад** tab: supplies (flour, sugar, ...) with a unit and an optional
+  low-stock level. Per day: delivered and used. A **count** sets what is
+  actually on the shelf at the end of a day; stock = latest count + later
+  deliveries − later use (`supply_stock()` in the database, `computeStock`
+  in the app). "За поръчка" lists supplies that are low or out.
+- Everyone in the business records supplies (while the subscription is
+  active); only the owner manages the supply list.
+- The owner picks the wording of the two product numbers per business:
+  Произведено / Изхвърлено, or Изпратено / Върнато for workshops that deliver
+  to shops and get unsold goods back.
 
 ## Subscriptions and admin (added 2026-10-07)
 

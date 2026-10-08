@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { EmptyState, PeriodNav, WastePill } from '../components/common'
+import { entryLabelKeys, UNIT_SHORT } from '../components/labels'
 import { useStore } from '../data/StoreProvider'
 import type { DailyEntry, ISODate } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
@@ -8,11 +9,12 @@ import {
   dailyTotals,
   groupReport,
   suggestions,
-  totals,
+  totalsByUnit,
   wasteLevel,
   type GroupSection,
-  type Totals,
+  type UnitTotals,
 } from '../lib/reports'
+import { formatQuantity, type Unit } from '../lib/units'
 
 type Mode = 'day' | 'week'
 
@@ -79,14 +81,15 @@ function DayReport() {
         onPrev={() => setDate(addDays(date, -1))}
         onNext={date < today ? () => setDate(addDays(date, 1)) : undefined}
       />
-      {entries && <ReportBody sections={groupReport(groups, products, entries)} summary={totals(entries)} />}
+      {entries && <ReportBody sections={groupReport(groups, products, entries)} summary={totalsByUnit(entries, products)} />}
     </>
   )
 }
 
 function WeekReport() {
-  const { t, locale, formatNumber } = useI18n()
-  const { groups, products } = useStore()
+  const { t, locale } = useI18n()
+  const { groups, products, settings } = useStore()
+  const labels = entryLabelKeys(settings.entryLabels)
   const today = todayInSofia()
   const thisMonday = startOfWeek(today)
   // Default to last week when it's early in the week and there's little data yet.
@@ -107,6 +110,10 @@ function WeekReport() {
   const sections = entries ? groupReport(groups, products, entries) : []
   // Only the worst few, so the advice stays readable.
   const tips = suggestions(sections).slice(0, MAX_TIPS)
+  const summary = entries ? totalsByUnit(entries, products) : []
+  // The chart can't mix units either: it follows the first (main) unit.
+  const chartUnit = summary[0]?.unit ?? 'pcs'
+  const chartEntries = (entries ?? []).filter((e) => (products.find((p) => p.id === e.productId)?.unit ?? 'pcs') === chartUnit)
 
   return (
     <>
@@ -123,21 +130,25 @@ function WeekReport() {
       {entries && (
         <ReportBody
           sections={sections}
-          summary={totals(entries)}
-          chart={<WeekChart days={dailyTotals(dates, entries)} />}
-          tips={tips.map((s) => (
-            <div key={s.product.id} className="tip">
-              <div className="tip__title">💡 {t('tip')}</div>
-              <p className="tip__text">
-                {t('suggestion', {
-                  name: s.product.name,
-                  produced: s.avgProduced,
-                  wasted: s.avgWasted,
-                  suggested: formatNumber(s.suggested),
-                })}
-              </p>
-            </div>
-          ))}
+          summary={summary}
+          chart={<WeekChart days={dailyTotals(dates, chartEntries)} unit={summary.length > 1 ? chartUnit : null} />}
+          tips={tips.map((s) => {
+            const q = (n: number) => formatQuantity(n, s.product.unit, locale)
+            return (
+              <div key={s.product.id} className="tip">
+                <div className="tip__title">💡 {t('tip')}</div>
+                <p className="tip__text">
+                  {t(labels.wasted === 'returned' ? 'suggestionSent' : 'suggestion', {
+                    name: s.product.name,
+                    produced: q(s.avgProduced),
+                    wasted: q(s.avgWasted),
+                    suggested: q(s.suggested),
+                    unit: t(UNIT_SHORT[s.product.unit]),
+                  })}
+                </p>
+              </div>
+            )
+          })}
         />
       )}
     </>
@@ -146,13 +157,23 @@ function WeekReport() {
 
 interface ReportBodyProps {
   sections: GroupSection[]
-  summary: Totals
+  /** One entry per unit; kilograms and pieces are never added together. */
+  summary: UnitTotals[]
   chart?: ReactNode
   tips?: ReactNode[]
 }
 
 function ReportBody({ sections, summary, chart, tips }: ReportBodyProps) {
-  const { t, formatNumber } = useI18n()
+  const { t, formatNumber, locale } = useI18n()
+  const { settings } = useStore()
+  const labels = entryLabelKeys(settings.entryLabels)
+  const amounts = (u: UnitTotals) =>
+    t('wasteOf', {
+      wasted: formatQuantity(u.totals.wasted, u.unit, locale),
+      produced: formatQuantity(u.totals.produced, u.unit, locale),
+      unit: t(UNIT_SHORT[u.unit]),
+    })
+  const pct = (p: number | null) => (p === null ? '–' : `${formatNumber(p)}%`)
 
   if (sections.length === 0) return <EmptyState title={t('noData')} hint={t('noDataHint')} />
 
@@ -160,13 +181,24 @@ function ReportBody({ sections, summary, chart, tips }: ReportBodyProps) {
     <>
       <div className="card summary">
         <div>
-          <div className="summary__label">{t('wasted')}</div>
-          <div className={`summary__pct summary__pct--${wasteLevel(summary.wastePct)}`}>
-            {summary.wastePct === null ? '–' : `${formatNumber(summary.wastePct)}%`}
-          </div>
-          <div className="summary__detail">
-            {t('wasteOf', { wasted: summary.wasted, produced: summary.produced })}
-          </div>
+          <div className="summary__label">{t(labels.wasted)}</div>
+          {summary.length === 1 ? (
+            <>
+              <div className={`summary__pct summary__pct--${wasteLevel(summary[0].totals.wastePct)}`}>
+                {pct(summary[0].totals.wastePct)}
+              </div>
+              <div className="summary__detail">{amounts(summary[0])}</div>
+            </>
+          ) : (
+            summary.map((u) => (
+              <div key={u.unit} className="summary__unit">
+                <span className={`summary__unit-pct summary__pct--${wasteLevel(u.totals.wastePct)}`}>
+                  {pct(u.totals.wastePct)}
+                </span>
+                <span className="summary__detail">{amounts(u)}</span>
+              </div>
+            ))
+          )}
         </div>
         {chart}
       </div>
@@ -177,16 +209,15 @@ function ReportBody({ sections, summary, chart, tips }: ReportBodyProps) {
         <section key={section.group.id} className="group">
           <h2 className="group__title group__title--with-pill">
             <span>{section.group.name}</span>
-            <WastePill pct={section.totals.wastePct} />
+            {/* Only when the group uses one unit: no % of kg-plus-pieces. */}
+            {section.byUnit.length === 1 && <WastePill pct={section.byUnit[0].totals.wastePct} />}
           </h2>
           <div className="card card--list">
             {section.rows.map((row) => (
               <div key={row.product.id} className="row">
                 <div>
                   <div className="row__name">{row.product.name}</div>
-                  <div className="row__detail">
-                    {t('wasteOf', { wasted: row.totals.wasted, produced: row.totals.produced })}
-                  </div>
+                  <div className="row__detail">{amounts({ unit: row.product.unit, totals: row.totals })}</div>
                 </div>
                 <WastePill pct={row.totals.wastePct} />
               </div>
@@ -198,12 +229,13 @@ function ReportBody({ sections, summary, chart, tips }: ReportBodyProps) {
   )
 }
 
-function WeekChart({ days }: { days: ReturnType<typeof dailyTotals> }) {
-  const { locale, formatNumber } = useI18n()
+/** Waste % per day; `unit` is shown when the week mixes units. */
+function WeekChart({ days, unit }: { days: ReturnType<typeof dailyTotals>; unit: Unit | null }) {
+  const { t, locale, formatNumber } = useI18n()
   const max = Math.max(20, ...days.map((d) => d.totals.wastePct ?? 0))
 
   return (
-    <div className="week-chart" aria-hidden="true">
+    <div className="week-chart" aria-hidden="true" data-unit={unit ? t(UNIT_SHORT[unit]) : undefined}>
       {days.map(({ date, totals: day }) => (
         <div key={date} className="week-chart__col" title={day.wastePct === null ? '' : `${formatNumber(day.wastePct)}%`}>
           <div className="week-chart__track">

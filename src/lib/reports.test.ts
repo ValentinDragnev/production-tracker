@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { DailyEntry, Product, ProductGroup } from '../data/types'
-import { groupReport, suggestions, totals, wasteLevel } from './reports'
+import { groupReport, suggestions, totals, totalsByUnit, wasteLevel } from './reports'
 
 const groups: ProductGroup[] = [
   { id: 'g2', name: 'Баници', sortOrder: 2, archived: false },
   { id: 'g1', name: 'Хляб', sortOrder: 1, archived: false },
 ]
 const products: Product[] = [
-  { id: 'bread', groupId: 'g1', name: 'Бял хляб', sortOrder: 1, archived: false },
-  { id: 'rye', groupId: 'g1', name: 'Ръжен хляб', sortOrder: 2, archived: false },
-  { id: 'banitsa', groupId: 'g2', name: 'Баница', sortOrder: 1, archived: false },
+  { id: 'bread', groupId: 'g1', name: 'Бял хляб', unit: 'pcs', sortOrder: 1, archived: false },
+  { id: 'rye', groupId: 'g1', name: 'Ръжен хляб', unit: 'pcs', sortOrder: 2, archived: false },
+  { id: 'banitsa', groupId: 'g2', name: 'Баница', unit: 'pcs', sortOrder: 1, archived: false },
+  { id: 'cream', groupId: 'g2', name: 'Крем', unit: 'kg', sortOrder: 2, archived: false },
 ]
 
 const entry = (productId: string, date: string, produced: number, wasted: number): DailyEntry => ({
@@ -49,7 +50,20 @@ describe('groupReport', () => {
     ])
     expect(report.map((s) => s.group.id)).toEqual(['g1', 'g2'])
     expect(report[0].rows.map((r) => r.product.id)).toEqual(['bread'])
-    expect(report[0].totals).toEqual({ produced: 120, wasted: 12, wastePct: 10 })
+    expect(report[0].byUnit).toEqual([{ unit: 'pcs', totals: { produced: 120, wasted: 12, wastePct: 10 } }])
+  })
+})
+
+describe('totalsByUnit', () => {
+  it('never adds kilograms to pieces', () => {
+    const byUnit = totalsByUnit(
+      [entry('banitsa', '2026-10-05', 80, 8), entry('cream', '2026-10-05', 4, 1), entry('rye', '2026-10-05', 0, 0)],
+      products,
+    )
+    expect(byUnit).toEqual([
+      { unit: 'pcs', totals: { produced: 80, wasted: 8, wastePct: 10 } },
+      { unit: 'kg', totals: { produced: 4, wasted: 1, wastePct: 25 } },
+    ])
   })
 })
 
@@ -67,6 +81,16 @@ describe('suggestions', () => {
   it('needs at least 3 days of data', () => {
     const report = groupReport(groups, products, week('banitsa', 80, 30, 2))
     expect(suggestions(report)).toEqual([])
+  })
+
+  it('uses whole steps for small piece counts', () => {
+    const report = groupReport(groups, products, week('rye', 25, 6))
+    expect(suggestions(report)[0]).toMatchObject({ avgProduced: 25, avgWasted: 6, suggested: 19 })
+  })
+
+  it('uses half steps and one decimal for kilograms', () => {
+    const report = groupReport(groups, products, week('cream', 4.2, 1.3))
+    expect(suggestions(report)[0]).toMatchObject({ avgProduced: 4.2, avgWasted: 1.3, suggested: 3 })
   })
 
   it('puts the worst waste first', () => {

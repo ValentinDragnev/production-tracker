@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useOptionalSession } from '../auth/SessionProvider'
 import { InvitePanel } from '../components/InvitePanel'
+import { UNIT_NAME, UNIT_SHORT } from '../components/labels'
 import { SubscriptionSection } from '../components/Subscription'
 import { useStore } from '../data/StoreProvider'
 import { EmailInUseError, Team, looksLikeEmail, normalizeEmail, type Invite, type Member } from '../data/team'
-import type { Product, ProductGroup } from '../data/types'
+import type { EntryLabels, Product, ProductGroup, Supply } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/messages'
 import { sortByOrder } from '../lib/reports'
+import { allowsDecimals, cleanQuantityInput, formatQuantity, parseQuantity, UNITS, type Unit } from '../lib/units'
 
 const LANGUAGES: { lang: Lang; label: string }[] = [
   { lang: 'bg', label: 'Български' },
@@ -58,7 +60,11 @@ export function SettingsScreen() {
       <SubscriptionSection />
 
       {role === 'owner' ? (
-        <ProductsSection />
+        <>
+          <WordingSection />
+          <ProductsSection />
+          <SuppliesSection />
+        </>
       ) : (
         <section className="group">
           <h2 className="group__title">{t('productsAndGroups')}</h2>
@@ -110,12 +116,12 @@ function BusinessCard(props: { name: string; isOwner: boolean; onRename(name: st
   if (editing) {
     return (
       <div className="card">
-        <NameForm
+        <ItemForm
           label={t('businessName')}
           initial={props.name}
           maxLength={80}
           onCancel={() => setEditing(false)}
-          onSave={async (name) => {
+          onSave={async ({ name }) => {
             try {
               await props.onRename(name)
               setEditing(false)
@@ -140,6 +146,96 @@ function BusinessCard(props: { name: string; isOwner: boolean; onRename(name: st
         </button>
       )}
     </div>
+  )
+}
+
+function WordingSection() {
+  const { t } = useI18n()
+  const { settings, saveSettings } = useStore()
+  const options: { id: EntryLabels; label: 'wordingMade' | 'wordingSent' }[] = [
+    { id: 'made_thrown', label: 'wordingMade' },
+    { id: 'sent_returned', label: 'wordingSent' },
+  ]
+  return (
+    <section className="group">
+      <h2 className="group__title">{t('wording')}</h2>
+      <div className="segmented segmented--stack">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            className={settings.entryLabels === o.id ? 'is-active' : ''}
+            aria-pressed={settings.entryLabels === o.id}
+            onClick={() => {
+              saveSettings({ ...settings, entryLabels: o.id }).catch(() => window.alert(t('actionFailed')))
+            }}
+          >
+            {t(o.label)}
+          </button>
+        ))}
+      </div>
+      <p className="muted wording__hint">{t('wordingHint')}</p>
+    </section>
+  )
+}
+
+function SuppliesSection() {
+  const { t, locale } = useI18n()
+  const { store, supplies, refresh } = useStore()
+  const sorted = sortByOrder(supplies)
+
+  const change = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+    } catch {
+      window.alert(t('actionFailed'))
+    }
+    await refresh()
+  }
+  const save = (supply: Supply) => change(() => store.saveSupply(supply))
+
+  const move = (index: number, delta: -1 | 1) => {
+    const reordered = [...sorted]
+    ;[reordered[index], reordered[index + delta]] = [reordered[index + delta], reordered[index]]
+    return change(() => Promise.all(reordered.map((s, i) => store.saveSupply({ ...s, sortOrder: i + 1 }))))
+  }
+
+  return (
+    <section className="group">
+      <h2 className="group__title">{t('supplies')}</h2>
+      <p className="muted">{t('suppliesHint')}</p>
+      <div className="card card--list">
+        {sorted.map((supply, i) => (
+          <EditableRow
+            key={supply.id}
+            name={supply.name}
+            hidden={supply.archived}
+            label={t('supplyName')}
+            meta={
+              t(UNIT_SHORT[supply.unit]) +
+              (supply.lowStockAt === null ? '' : ` · ≤ ${formatQuantity(supply.lowStockAt, supply.unit, locale)}`)
+            }
+            extras={{ unit: supply.unit, lowStockAt: supply.lowStockAt }}
+            onSave={({ name, unit, lowStockAt }) => save({ ...supply, name, unit, lowStockAt })}
+            onToggleHidden={() => save({ ...supply, archived: !supply.archived })}
+            onMoveUp={i > 0 ? () => move(i, -1) : undefined}
+            onMoveDown={i < sorted.length - 1 ? () => move(i, 1) : undefined}
+            onDelete={() => change(() => store.deleteSupply(supply.id))}
+            deleteConfirm={t('deleteSupplyConfirm', { name: supply.name })}
+          />
+        ))}
+        <AddButton
+          label={t('addSupply')}
+          fieldLabel={t('supplyName')}
+          placeholder={t('supplyPlaceholder')}
+          indent={false}
+          extras={{ unit: 'kg', lowStockAt: null }}
+          onAdd={({ name, unit, lowStockAt }) =>
+            save({ id: newId(), name, unit, lowStockAt, sortOrder: sorted.length + 1, archived: false })
+          }
+        />
+      </div>
+    </section>
   )
 }
 
@@ -191,7 +287,7 @@ function ProductsSection() {
               hidden={group.archived}
               strong
               label={t('groupName')}
-              onSave={(name) => saveGroup({ ...group, name })}
+              onSave={({ name }) => saveGroup({ ...group, name })}
               onToggleHidden={() => saveGroup({ ...group, archived: !group.archived })}
               onMoveUp={gi > 0 ? () => move(sortedGroups, gi, -1, saveGroupRaw) : undefined}
               onMoveDown={gi < sortedGroups.length - 1 ? () => move(sortedGroups, gi, 1, saveGroupRaw) : undefined}
@@ -205,7 +301,9 @@ function ProductsSection() {
                 hidden={product.archived}
                 indent
                 label={t('productName')}
-                onSave={(name) => saveProduct({ ...product, name })}
+                meta={product.unit === 'pcs' ? undefined : t(UNIT_SHORT[product.unit])}
+                extras={{ unit: product.unit }}
+                onSave={({ name, unit }) => saveProduct({ ...product, name, unit })}
                 onToggleHidden={() => saveProduct({ ...product, archived: !product.archived })}
                 onMoveUp={pi > 0 ? () => move(groupProducts, pi, -1, saveProductRaw) : undefined}
                 onMoveDown={
@@ -219,11 +317,13 @@ function ProductsSection() {
               label={t('addProduct')}
               fieldLabel={t('productName')}
               placeholder={t('productPlaceholder')}
-              onAdd={(name) =>
+              extras={{ unit: 'pcs' }}
+              onAdd={({ name, unit }) =>
                 saveProduct({
                   id: newId(),
                   groupId: group.id,
                   name,
+                  unit,
                   sortOrder: groupProducts.length + 1,
                   archived: false,
                 })
@@ -235,11 +335,11 @@ function ProductsSection() {
 
       {addingGroup ? (
         <div className="card">
-          <NameForm
+          <ItemForm
             label={t('groupName')}
             placeholder={t('groupPlaceholder')}
             onCancel={() => setAddingGroup(false)}
-            onSave={async (name) => {
+            onSave={async ({ name }) => {
               await saveGroup({ id: newId(), name, sortOrder: groups.length + 1, archived: false })
               setAddingGroup(false)
             }}
@@ -399,13 +499,30 @@ function TeamSection({ team, myEmail, businessName }: { team: Team; myEmail: str
   )
 }
 
+/** What a form edits: always a name, plus a unit and a low-stock level where relevant. */
+interface ItemValues {
+  name: string
+  unit: Unit
+  lowStockAt: number | null
+}
+
+/** Which extra fields a form shows, with their starting values. */
+interface ItemExtras {
+  unit?: Unit
+  /** Present (even as null) to show the low-stock field. */
+  lowStockAt?: number | null
+}
+
 interface EditableRowProps {
   name: string
   hidden: boolean
   label: string
   strong?: boolean
   indent?: boolean
-  onSave(name: string): Promise<void>
+  extras?: ItemExtras
+  /** Short text after the name, e.g. the unit. */
+  meta?: string
+  onSave(values: ItemValues): Promise<void>
   onToggleHidden(): Promise<void>
   onMoveUp?: () => Promise<void>
   onMoveDown?: () => Promise<void>
@@ -425,6 +542,7 @@ function EditableRow(props: EditableRowProps) {
       <button type="button" className={rowClass} aria-expanded={false} onClick={() => setOpen(true)}>
         <span className={props.strong ? 'row__name row__name--strong' : 'row__name'}>{props.name}</span>
         <span className="row__meta">
+          {props.meta && <span className="tag tag--unit">{props.meta}</span>}
           {props.hidden && <span className="tag">{t('hidden')}</span>}
           <span aria-hidden="true">✎</span>
         </span>
@@ -434,13 +552,14 @@ function EditableRow(props: EditableRowProps) {
 
   return (
     <div className={`row-editor${props.indent ? ' row--indent' : ''}`}>
-      <NameForm
+      <ItemForm
         label={props.label}
         initial={props.name}
+        extras={props.extras}
         cancelLabel={t('close')}
         onCancel={() => setOpen(false)}
-        onSave={async (name) => {
-          await props.onSave(name)
+        onSave={async (values) => {
+          await props.onSave(values)
           setOpen(false)
         }}
       />
@@ -477,23 +596,32 @@ function EditableRow(props: EditableRowProps) {
   )
 }
 
-function AddButton(props: { label: string; fieldLabel: string; placeholder: string; onAdd(name: string): Promise<void> }) {
+function AddButton(props: {
+  label: string
+  fieldLabel: string
+  placeholder: string
+  extras?: ItemExtras
+  indent?: boolean
+  onAdd(values: ItemValues): Promise<void>
+}) {
   const [open, setOpen] = useState(false)
+  const indent = props.indent ?? true
   if (!open) {
     return (
-      <button type="button" className="row row--button row--add" onClick={() => setOpen(true)}>
+      <button type="button" className={`row row--button row--add${indent ? '' : ' row--add-flush'}`} onClick={() => setOpen(true)}>
         + {props.label}
       </button>
     )
   }
   return (
-    <div className="row-editor row--indent">
-      <NameForm
+    <div className={`row-editor${indent ? ' row--indent' : ''}`}>
+      <ItemForm
         label={props.fieldLabel}
         placeholder={props.placeholder}
+        extras={props.extras}
         onCancel={() => setOpen(false)}
-        onSave={async (name) => {
-          await props.onAdd(name)
+        onSave={async (values) => {
+          await props.onAdd(values)
           setOpen(false)
         }}
       />
@@ -501,21 +629,27 @@ function AddButton(props: { label: string; fieldLabel: string; placeholder: stri
   )
 }
 
-interface NameFormProps {
+interface ItemFormProps {
   label: string
   initial?: string
   placeholder?: string
+  extras?: ItemExtras
   /** Defaults to "Cancel". */
   cancelLabel?: string
   /** Matches the database limit: 60 for products and groups, 80 for a business. */
   maxLength?: number
-  onSave(name: string): Promise<void>
+  onSave(values: ItemValues): Promise<void>
   onCancel(): void
 }
 
-function NameForm({ label, initial = '', placeholder, cancelLabel, maxLength = 60, onSave, onCancel }: NameFormProps) {
-  const { t } = useI18n()
+function ItemForm({ label, initial = '', placeholder, extras, cancelLabel, maxLength = 60, onSave, onCancel }: ItemFormProps) {
+  const { t, locale } = useI18n()
   const [name, setName] = useState(initial)
+  const [unit, setUnit] = useState<Unit>(extras?.unit ?? 'pcs')
+  const showLowStock = extras !== undefined && 'lowStockAt' in extras
+  const [lowStock, setLowStock] = useState(
+    extras?.lowStockAt === null || extras?.lowStockAt === undefined ? '' : formatQuantity(extras.lowStockAt, unit, locale),
+  )
   const [error, setError] = useState(false)
 
   return (
@@ -528,7 +662,11 @@ function NameForm({ label, initial = '', placeholder, cancelLabel, maxLength = 6
           setError(true)
           return
         }
-        void onSave(trimmed)
+        void onSave({
+          name: trimmed,
+          unit,
+          lowStockAt: showLowStock && lowStock.trim() ? parseQuantity(lowStock, unit) : null,
+        })
       }}
     >
       <label className="field">
@@ -547,6 +685,32 @@ function NameForm({ label, initial = '', placeholder, cancelLabel, maxLength = 6
         />
         {error && <span className="field__error">{t('nameRequired')}</span>}
       </label>
+      {extras?.unit !== undefined && (
+        <label className="field">
+          <span className="field__label">{t('unit')}</span>
+          <select className="field__input" value={unit} onChange={(e) => setUnit(e.target.value as Unit)}>
+            {UNITS.map((u) => (
+              <option key={u} value={u}>
+                {t(UNIT_NAME[u])} ({t(UNIT_SHORT[u])})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {showLowStock && (
+        <label className="field">
+          <span className="field__label">
+            {t('lowStockAt')} ({t(UNIT_SHORT[unit])})
+          </span>
+          <input
+            className="field__input"
+            inputMode={allowsDecimals(unit) ? 'decimal' : 'numeric'}
+            value={lowStock}
+            onChange={(e) => setLowStock(cleanQuantityInput(e.target.value, unit))}
+          />
+          <span className="field__hint">{t('lowStockHint')}</span>
+        </label>
+      )}
       <div className="name-form__actions">
         <button type="submit" className="btn btn--primary">
           {t('save')}

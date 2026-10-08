@@ -1,4 +1,5 @@
 import type { DailyEntry, ISODate, Product, ProductGroup } from '../data/types'
+import { allowsDecimals, UNITS, type Unit } from './units'
 
 export interface Totals {
   produced: number
@@ -35,10 +36,25 @@ export interface ProductRow {
   daysWithData: number
 }
 
+/** Totals for the products of one unit; kilograms and pieces never mix. */
+export interface UnitTotals {
+  unit: Unit
+  totals: Totals
+}
+
 export interface GroupSection {
   group: ProductGroup
-  totals: Totals
+  /** One line per unit used in the group, in UNITS order. */
+  byUnit: UnitTotals[]
   rows: ProductRow[]
+}
+
+/** Splits entries by their product's unit and totals each part. */
+export function totalsByUnit(entries: DailyEntry[], products: Product[]): UnitTotals[] {
+  const unitOf = new Map(products.map((p) => [p.id, p.unit]))
+  return UNITS.map((unit) => ({ unit, entries: entries.filter((e) => (unitOf.get(e.productId) ?? 'pcs') === unit) }))
+    .filter((u) => u.entries.some((e) => e.produced > 0 || e.wasted > 0))
+    .map(({ unit, entries: list }) => ({ unit, totals: totals(list) }))
 }
 
 /**
@@ -67,7 +83,7 @@ export function groupReport(
           return { product, totals: totals(list), daysWithData: list.length }
         })
       const groupEntries = rows.flatMap((r) => byProduct.get(r.product.id)!)
-      return { group, totals: totals(groupEntries), rows }
+      return { group, byUnit: totalsByUnit(groupEntries, products), rows }
     })
     .filter((section) => section.rows.length > 0)
 }
@@ -92,8 +108,17 @@ export interface Suggestion {
 export const SUGGESTION_MIN_DAYS = 3
 
 /**
+ * How finely to round a suggestion: to 5 for bigger piece counts, whole
+ * units for small ones, and to 0,5 / 1 for kilograms and litres.
+ */
+export function suggestionStep(avgProduced: number, unit: Unit): number {
+  if (allowsDecimals(unit)) return avgProduced >= 20 ? 1 : 0.5
+  return avgProduced >= 50 ? 5 : 1
+}
+
+/**
  * For products that waste a lot, suggest making roughly what was actually
- * used: average produced minus average wasted, rounded to the nearest 5.
+ * used: average produced minus average wasted, rounded to a sensible step.
  * Worst offenders first.
  */
 export function suggestions(sections: GroupSection[]): Suggestion[] {
@@ -104,11 +129,14 @@ export function suggestions(sections: GroupSection[]): Suggestion[] {
     .map((r) => {
       const avgProduced = r.totals.produced / r.daysWithData
       const avgWasted = r.totals.wasted / r.daysWithData
-      const suggested = Math.max(5, Math.round((avgProduced - avgWasted) / 5) * 5)
+      const step = suggestionStep(avgProduced, r.product.unit)
+      const suggested = Math.max(step, Math.round((avgProduced - avgWasted) / step) * step)
+      // Averages shown to the same precision as the unit allows.
+      const show = (n: number) => (allowsDecimals(r.product.unit) ? Math.round(n * 10) / 10 : Math.round(n))
       return {
         product: r.product,
-        avgProduced: Math.round(avgProduced),
-        avgWasted: Math.round(avgWasted),
+        avgProduced: show(avgProduced),
+        avgWasted: show(avgWasted),
         suggested,
       }
     })

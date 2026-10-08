@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Role } from './team'
-import type { DataStore, Product, ProductGroup } from './types'
+import type { BusinessSettings, DataStore, Product, ProductGroup, Supply } from './types'
 
 interface StoreState {
   store: DataStore
@@ -13,6 +13,9 @@ interface StoreState {
   recheckAccess(): void
   groups: ProductGroup[]
   products: Product[]
+  supplies: Supply[]
+  settings: BusinessSettings
+  saveSettings(settings: BusinessSettings): Promise<void>
   loading: boolean
   error: boolean
   /** Re-reads groups and products after a change. */
@@ -45,6 +48,8 @@ export function StoreProvider({
 }: Props) {
   const [groups, setGroups] = useState<ProductGroup[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [supplies, setSupplies] = useState<Supply[]>([])
+  const [settings, setSettings] = useState<BusinessSettings>({ entryLabels: 'made_thrown' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [version, setVersion] = useState(0)
@@ -58,9 +63,16 @@ export function StoreProvider({
 
   const refresh = useCallback(async () => {
     try {
-      const [g, p] = await Promise.all([store.listGroups(), store.listProducts()])
+      const [g, p, s, st] = await Promise.all([
+        store.listGroups(),
+        store.listProducts(),
+        store.listSupplies(),
+        store.getSettings(),
+      ])
       setGroups(g)
       setProducts(p)
+      setSupplies(s)
+      setSettings(st)
       setError(false)
     } catch {
       setError(true)
@@ -93,6 +105,12 @@ export function StoreProvider({
         recheckAccess,
         groups,
         products,
+        supplies,
+        settings,
+        saveSettings: async (next) => {
+          await store.saveSettings(next)
+          setSettings(next)
+        },
         loading,
         error,
         refresh,

@@ -50,9 +50,9 @@ supabase config push    # apply them
 src/
   auth/       session, login, business setup
   data/       types, DataStore interface, Supabase + demo stores, staff
-  lib/        date helpers (Europe/Sofia, Mon–Sun weeks), report calculations
+  lib/        dates (Europe/Sofia, Mon–Sun weeks), reports, units, stock, subscription
   i18n/       Bulgarian + English texts
-  screens/    Today, Reports, Settings
+  screens/    Today, Stock, Reports, Settings, Admin
   components/ Stepper and small shared pieces
 ```
 

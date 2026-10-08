@@ -3,14 +3,18 @@ import { useOptionalSession } from './auth/SessionProvider'
 import { useStore } from './data/StoreProvider'
 import { useI18n } from './i18n/I18nProvider'
 import type { MessageKey } from './i18n/messages'
-import { ReportsScreen } from './screens/ReportsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TodayScreen } from './screens/TodayScreen'
 
-type Tab = 'today' | 'reports' | 'settings' | 'admin'
+type Tab = 'today' | 'stock' | 'reports' | 'settings' | 'admin'
 
 const TABS: { id: Tab; label: MessageKey; icon: string }[] = [
   { id: 'today', label: 'tabToday', icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z' },
+  {
+    id: 'stock',
+    label: 'tabStock',
+    icon: 'M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8',
+  },
   { id: 'reports', label: 'tabReports', icon: 'M4 20V10M10 20V4M16 20v-8M22 20H2' },
   {
     id: 'settings',
@@ -19,6 +23,9 @@ const TABS: { id: Tab; label: MessageKey; icon: string }[] = [
   },
 ]
 
+// Loaded on first use, so the app starts with just the Today screen.
+const StockScreen = lazy(() => import('./screens/StockScreen').then((m) => ({ default: m.StockScreen })))
+const ReportsScreen = lazy(() => import('./screens/ReportsScreen').then((m) => ({ default: m.ReportsScreen })))
 // Only the platform owner opens it, so customers never download it.
 const AdminScreen = lazy(() => import('./screens/AdminScreen').then((m) => ({ default: m.AdminScreen })))
 
@@ -36,6 +43,10 @@ export function App() {
   // Where to scroll after switching tabs, e.g. "How to pay" → the subscription section.
   const [scrollTo, setScrollTo] = useState<string | null>(null)
   const tabs = isAdmin ? [...TABS, ADMIN_TAB] : TABS
+  const openSubscription = () => {
+    setScrollTo('subscription')
+    setTab('settings')
+  }
 
   useEffect(() => {
     document.title = t('appName')
@@ -60,21 +71,13 @@ export function App() {
             </button>
           </div>
         )}
-        {!loading && tab === 'today' && (
-          <TodayScreen
-            onHowToPay={() => {
-              setScrollTo('subscription')
-              setTab('settings')
-            }}
-          />
-        )}
-        {!loading && tab === 'reports' && <ReportsScreen />}
-        {!loading && tab === 'settings' && <SettingsScreen />}
-        {tab === 'admin' && isAdmin && (
-          <Suspense fallback={<p className="muted screen">{t('loading')}</p>}>
-            <AdminScreen />
-          </Suspense>
-        )}
+        <Suspense fallback={<p className="muted screen">{t('loading')}</p>}>
+          {!loading && tab === 'today' && <TodayScreen onHowToPay={openSubscription} />}
+          {!loading && tab === 'stock' && <StockScreen onHowToPay={openSubscription} />}
+          {!loading && tab === 'reports' && <ReportsScreen />}
+          {!loading && tab === 'settings' && <SettingsScreen />}
+          {tab === 'admin' && isAdmin && <AdminScreen />}
+        </Suspense>
       </main>
       <nav className="tabbar">
         {tabs.map((item) => (

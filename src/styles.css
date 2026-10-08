@@ -1082,3 +1082,146 @@ select.field__input {
   font: inherit;
   line-height: 1.4;
 }
+
+/* --- Units, wording, stock ------------------------------------------------ */
+
+.stepper__unit {
+  color: var(--text-faint);
+}
+
+.stepper--neutral .stepper__btn--plus {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.tag--unit {
+  background: var(--primary-soft);
+  color: var(--primary-soft-text);
+}
+
+.row--add-flush {
+  padding-left: 16px;
+}
+
+.segmented--stack {
+  flex-direction: column;
+}
+
+.wording__hint {
+  margin-top: 8px;
+}
+
+.field__hint {
+  display: block;
+  font-size: 13px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+.name-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.summary__unit {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.summary__unit-pct {
+  font-size: 24px;
+  font-weight: 700;
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+
+.week-chart[data-unit] {
+  position: relative;
+}
+
+.week-chart[data-unit]::before {
+  content: attr(data-unit);
+  position: absolute;
+  top: -18px;
+  right: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.to-order {
+  margin: 8px 0 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--medium-bg);
+  color: var(--medium-text);
+}
+
+.to-order__title {
+  font-weight: 700;
+}
+
+.to-order__list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.to-order__list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.supply__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.supply__counted {
+  font-size: 13px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.supply__count {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.supply__count-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.stock {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock--ok {
+  color: var(--low-text);
+}
+
+.stock--low {
+  color: var(--medium-text);
+}
+
+.stock--out {
+  color: var(--high-text);
+}
+
+.to-order .stock {
+  color: inherit;
+}

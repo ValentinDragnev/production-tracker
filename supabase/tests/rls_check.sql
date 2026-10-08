@@ -353,13 +353,110 @@ select rls_test.expect_refused(
     current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3', '2026-10-08'),
   'denied', 'numbers entered after the payment was removed');
 
--- 9. Logged-out visitors get nothing.
+-- 9. Units, wording and supplies. B is active (trial + yearly payment); C is
+-- now B's staff (joined in step 7).
+reset role;
+select rls_test.act_as('b');
+set local role authenticated;
+update public.businesses set entry_labels = 'sent_returned' where id = current_setting('test.biz_b')::uuid;
+select rls_test.expect((select entry_labels = 'sent_returned' from public.businesses), 'owner sets the wording');
+insert into public.products (id, business_id, group_id, name, unit)
+  values ('00000000-0000-4000-c000-0000000000b1', current_setting('test.biz_b')::uuid,
+          '00000000-0000-4000-b000-00000000000b', 'Cream', 'kg');
+insert into public.daily_entries (business_id, product_id, date, produced, wasted)
+  values (current_setting('test.biz_b')::uuid, '00000000-0000-4000-c000-0000000000b1', '2026-10-07', 2.5, 0.25);
+select rls_test.expect((select produced = 2.5 and wasted = 0.25 from public.daily_entries), 'kg products keep decimals');
+select rls_test.expect_refused(
+  format('insert into public.products (business_id, group_id, name, unit) values (%L, %L, %L, %L)',
+    current_setting('test.biz_b'), '00000000-0000-4000-b000-00000000000b', 'Odd', 'tons'),
+  'new row for relation "products" violates check constraint "products_unit_check"', 'unknown unit accepted');
+
+insert into public.supplies (id, business_id, name, unit, low_stock_at) values
+  ('00000000-0000-4000-d000-0000000000b1', current_setting('test.biz_b')::uuid, 'Flour', 'kg', 10),
+  ('00000000-0000-4000-d000-0000000000b2', current_setting('test.biz_b')::uuid, 'Sugar', 'kg', null);
+insert into public.supply_days (business_id, supply_id, date, received, used, counted) values
+  (current_setting('test.biz_b')::uuid, '00000000-0000-4000-d000-0000000000b1', '2026-10-01', 25, 0, null),
+  (current_setting('test.biz_b')::uuid, '00000000-0000-4000-d000-0000000000b1', '2026-10-02', 0, 3, 20),
+  (current_setting('test.biz_b')::uuid, '00000000-0000-4000-d000-0000000000b1', '2026-10-03', 0, 5.5, null),
+  (current_setting('test.biz_b')::uuid, '00000000-0000-4000-d000-0000000000b2', '2026-10-01', 5, 2, null);
+
+-- Staff record deliveries and use, but can't manage the supply list.
+reset role;
+select rls_test.act_as('c');
+set local role authenticated;
+insert into public.supply_days (business_id, supply_id, date, received, used)
+  values (current_setting('test.biz_b')::uuid, '00000000-0000-4000-d000-0000000000b1', '2026-10-04', 10, 0);
+select rls_test.expect(
+  (select stock = 24.5 and counted_on = '2026-10-02' from public.supply_stock(current_setting('test.biz_b')::uuid)
+   where supply_id = '00000000-0000-4000-d000-0000000000b1'),
+  'stock = last count + later deliveries - later use');
+select rls_test.expect(
+  (select stock = 3 and counted_on is null from public.supply_stock(current_setting('test.biz_b')::uuid)
+   where supply_id = '00000000-0000-4000-d000-0000000000b2'),
+  'stock without a count starts from zero');
+select rls_test.expect_refused(
+  format('insert into public.supplies (business_id, name) values (%L, %L)', current_setting('test.biz_b'), 'Staff supply'),
+  'denied', 'staff added a supply');
+update public.supplies set name = 'Hacked' where id = '00000000-0000-4000-d000-0000000000b1';
+delete from public.supplies where id = '00000000-0000-4000-d000-0000000000b2';
+update public.businesses set entry_labels = 'made_thrown';
+
+-- Another business sees none of it and can't record into it.
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+select rls_test.expect((select count(*) = 0 from public.supplies), 'A cannot see B supplies');
+select rls_test.expect((select count(*) = 0 from public.supply_stock(current_setting('test.biz_b')::uuid)),
+  'A cannot read B stock');
+select rls_test.expect_refused(
+  format('insert into public.supply_days (business_id, supply_id, date, received) values (%L, %L, %L, 1)',
+    current_setting('test.biz_b'), '00000000-0000-4000-d000-0000000000b1', '2026-10-05'),
+  'denied', 'A recorded supplies for B');
+
+reset role;
+select rls_test.act_as('b');
+set local role authenticated;
+select rls_test.expect(
+  (select count(*) = 2 and bool_and(name <> 'Hacked') from public.supplies), 'staff could not change or delete supplies');
+select rls_test.expect((select entry_labels = 'sent_returned' from public.businesses), 'staff could not change the wording');
+
+-- A locked business can't record supplies either.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_set_locked(current_setting('test.biz_b')::uuid, true);
+reset role;
+select rls_test.act_as('c');
+set local role authenticated;
+select rls_test.expect_refused(
+  format('insert into public.supply_days (business_id, supply_id, date, used) values (%L, %L, %L, 1)',
+    current_setting('test.biz_b'), '00000000-0000-4000-d000-0000000000b1', '2026-10-06'),
+  'denied', 'locked business recorded supplies');
+
+-- Deleting a supply takes its history with it.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_set_locked(current_setting('test.biz_b')::uuid, false);
+reset role;
+select rls_test.act_as('b');
+set local role authenticated;
+delete from public.supplies where id = '00000000-0000-4000-d000-0000000000b1';
+select rls_test.expect((select count(*) = 1 from public.supply_days), 'deleted supply took its days with it');
+
+-- 10. Logged-out visitors get nothing.
 reset role;
 set local role anon;
 do $$
 begin
   perform 1 from public.products;
   raise exception 'RLS CHECK FAILED: anon could read products';
+exception when insufficient_privilege then null;
+end $$;
+do $$
+begin
+  perform 1 from public.supplies;
+  raise exception 'RLS CHECK FAILED: anon could read supplies';
 exception when insufficient_privilege then null;
 end $$;
 

@@ -1,3 +1,5 @@
+import type { Unit } from '../lib/units'
+
 /** Calendar day in Europe/Sofia, formatted YYYY-MM-DD. */
 export type ISODate = string
 
@@ -12,6 +14,7 @@ export interface Product {
   id: string
   groupId: string
   name: string
+  unit: Unit
   sortOrder: number
   archived: boolean
 }
@@ -21,6 +24,39 @@ export interface DailyEntry {
   date: ISODate
   produced: number
   wasted: number
+}
+
+/** How the two daily product numbers are worded for this business. */
+export type EntryLabels = 'made_thrown' | 'sent_returned'
+
+export interface BusinessSettings {
+  entryLabels: EntryLabels
+}
+
+/** A raw material such as flour or sugar. */
+export interface Supply {
+  id: string
+  name: string
+  unit: Unit
+  /** Warn when stock is at or below this; null for no warning. */
+  lowStockAt: number | null
+  sortOrder: number
+  archived: boolean
+}
+
+/** One supply on one day. `counted`: actual stock at the end of that day. */
+export interface SupplyDay {
+  supplyId: string
+  date: ISODate
+  received: number
+  used: number
+  counted: number | null
+}
+
+export interface SupplyStock {
+  stock: number
+  /** Date of the last count it's based on; null if never counted. */
+  countedOn: ISODate | null
 }
 
 /**
@@ -38,4 +74,16 @@ export interface DataStore {
   deleteGroup(id: string): Promise<void>
   /** Permanently deletes a product and all its numbers. */
   deleteProduct(id: string): Promise<void>
+
+  getSettings(): Promise<BusinessSettings>
+  saveSettings(settings: BusinessSettings): Promise<void>
+
+  listSupplies(): Promise<Supply[]>
+  saveSupply(supply: Supply): Promise<void>
+  /** Permanently deletes a supply and its history. */
+  deleteSupply(id: string): Promise<void>
+  listSupplyDays(from: ISODate, to: ISODate): Promise<SupplyDay[]>
+  saveSupplyDay(day: SupplyDay): Promise<void>
+  /** Current stock per supply id. */
+  supplyStock(): Promise<Record<string, SupplyStock>>
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EmptyState, PeriodNav } from '../components/common'
+import { entryLabelKeys } from '../components/labels'
 import { Stepper } from '../components/Stepper'
 import { SubscriptionNotice } from '../components/Subscription'
 import { useStore } from '../data/StoreProvider'
@@ -16,7 +17,8 @@ const EMPTY: Counts = { produced: 0, wasted: 0 }
 
 export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
   const { t, locale } = useI18n()
-  const { store, groups, products, role, canEdit, recheckAccess } = useStore()
+  const { store, groups, products, role, canEdit, recheckAccess, settings } = useStore()
+  const labels = entryLabelKeys(settings.entryLabels)
   const today = todayInSofia()
   const [date, setDate] = useState<ISODate>(today)
   // Tagged with its date so we never show (or edit) one day's numbers under another.
@@ -135,16 +137,18 @@ export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
               <div key={product.id} className="card">
                 <div className="card__title">{product.name}</div>
                 <Stepper
-                  label={t('produced')}
+                  label={t(labels.produced)}
                   productName={product.name}
+                  unit={product.unit}
                   tone="produced"
                   disabled={!canEdit}
                   value={c.produced}
                   onChange={(v) => update(product.id, 'produced', v)}
                 />
                 <Stepper
-                  label={t('wasted')}
+                  label={t(labels.wasted)}
                   productName={product.name}
+                  unit={product.unit}
                   tone="wasted"
                   disabled={!canEdit}
                   value={c.wasted}
