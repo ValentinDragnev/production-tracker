@@ -52,3 +52,24 @@ export function formatMoment(moment: string | Date, locale: string): string {
     new Date(moment),
   )
 }
+
+/** First day of the month containing `date`. */
+export function startOfMonth(date: ISODate): ISODate {
+  return `${date.slice(0, 7)}-01`
+}
+
+/** First day of the month `months` away from the month containing `date`. */
+export function addMonths(date: ISODate, months: number): ISODate {
+  const d = toUtc(startOfMonth(date))
+  d.setUTCMonth(d.getUTCMonth() + months)
+  return fromUtc(d)
+}
+
+/** Every date of the month containing `date`. */
+export function monthDates(date: ISODate): ISODate[] {
+  const first = startOfMonth(date)
+  const next = addMonths(first, 1)
+  const dates: ISODate[] = []
+  for (let d = first; d < next; d = addDays(d, 1)) dates.push(d)
+  return dates
+}

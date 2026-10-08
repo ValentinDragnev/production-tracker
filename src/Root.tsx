@@ -4,7 +4,7 @@ import { useI18n } from './i18n/I18nProvider'
 import { App } from './App'
 import { BusinessSetupScreen, LoginScreen, StatusScreen } from './auth/AuthScreens'
 import { SessionProvider, useSession, type BusinessMembership } from './auth/SessionProvider'
-import { canEnterNumbers, subscriptionState, type Subscription } from './lib/subscription'
+import { canEnterNumbers, limitsFor, PLAN_LIMITS, planState, type Subscription } from './lib/subscription'
 import { LocalStore } from './data/localStore'
 import { StoreProvider } from './data/StoreProvider'
 import { supabase } from './data/supabase'
@@ -49,6 +49,7 @@ function SessionGate() {
           key={state.business.id}
           client={client}
           business={state.business}
+          staffRank={state.staffRank}
           subscription={state.subscription}
         />
       )
@@ -71,14 +72,30 @@ function StandaloneAdmin({ onBack }: { onBack(): void }) {
   )
 }
 
-function BusinessApp(props: { client: SupabaseClient; business: BusinessMembership; subscription: Subscription | null }) {
+function BusinessApp(props: {
+  client: SupabaseClient
+  business: BusinessMembership
+  staffRank: number | null
+  subscription: Subscription | null
+}) {
   const { client, business } = props
   const { refreshBilling } = useSession()
   const store = useMemo(() => new SupabaseStore(client, business.id), [client, business.id])
   // Unknown subscription: let them try; the database has the final say.
-  const canEdit = props.subscription ? canEnterNumbers(subscriptionState(props.subscription)) : true
+  const plan = props.subscription ? planState(props.subscription) : null
+  const limits = plan ? limitsFor(plan) : PLAN_LIMITS.unlimited
+  const staffBlocked =
+    business.role === 'staff' && limits.staff !== null && props.staffRank !== null && props.staffRank > limits.staff
+  const canEdit = (plan ? canEnterNumbers(plan) : true) && !staffBlocked
   return (
-    <StoreProvider store={store} role={business.role} canEdit={canEdit} onRecheckAccess={() => void refreshBilling()}>
+    <StoreProvider
+      store={store}
+      role={business.role}
+      canEdit={canEdit}
+      staffBlocked={staffBlocked}
+      limits={limits}
+      onRecheckAccess={() => void refreshBilling()}
+    >
       <App />
     </StoreProvider>
   )

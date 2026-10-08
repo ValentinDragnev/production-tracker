@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, startOfWeek, todayInSofia, weekDates } from './dates'
+import { addDays, addMonths, monthDates, startOfMonth, startOfWeek, todayInSofia, weekDates } from './dates'
 
 describe('todayInSofia', () => {
   it('uses Sofia time, not UTC', () => {
@@ -30,5 +30,18 @@ describe('weeks', () => {
     expect(week).toHaveLength(7)
     expect(week[0]).toBe('2026-09-28')
     expect(week[6]).toBe('2026-10-04')
+  })
+})
+
+describe('months', () => {
+  it('start on the 1st and step across years', () => {
+    expect(startOfMonth('2026-10-08')).toBe('2026-10-01')
+    expect(addMonths('2026-12-15', 1)).toBe('2027-01-01')
+    expect(addMonths('2026-03-31', -1)).toBe('2026-02-01')
+  })
+
+  it('list every day, including leap days', () => {
+    expect(monthDates('2026-10-08')).toHaveLength(31)
+    expect(monthDates('2028-02-10').at(-1)).toBe('2028-02-29')
   })
 })

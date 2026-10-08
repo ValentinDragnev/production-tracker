@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { EmptyState, PeriodNav } from '../components/common'
 import { UNIT_SHORT } from '../components/labels'
 import { Stepper } from '../components/Stepper'
-import { SubscriptionNotice } from '../components/Subscription'
+import { PlanUpsell, SubscriptionNotice } from '../components/Subscription'
 import { useStore } from '../data/StoreProvider'
 import type { ISODate, Supply, SupplyDay, SupplyStock } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
@@ -18,6 +18,21 @@ const emptyDay = (supplyId: string, date: ISODate): SupplyDay => ({ supplyId, da
 
 /** Supplies: what came in and what was used on a day, and what's left. */
 export function StockScreen({ onHowToPay }: { onHowToPay(): void }) {
+  const { t } = useI18n()
+  const { limits } = useStore()
+  // Stock is a paid feature; the data stays and returns with an upgrade.
+  if (!limits.stock) {
+    return (
+      <div className="screen">
+        <h1 className="screen__title">{t('tabStock')}</h1>
+        <PlanUpsell title="stockUpsellTitle" body="stockUpsellBody" />
+      </div>
+    )
+  }
+  return <StockDays onHowToPay={onHowToPay} />
+}
+
+function StockDays({ onHowToPay }: { onHowToPay(): void }) {
   const { t, locale } = useI18n()
   const { store, supplies, role, canEdit, recheckAccess } = useStore()
   const today = todayInSofia()

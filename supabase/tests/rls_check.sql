@@ -262,7 +262,7 @@ select rls_test.expect_refused('select * from public.customer_notes', 'denied', 
 select rls_test.expect_refused('select * from public.platform_admins', 'denied', 'members can read the admin list');
 select rls_test.expect_refused('select * from public.admin_customers()', 'not_admin', 'owner opened the admin overview');
 select rls_test.expect_refused(
-  format('select public.admin_record_payment(%L, 0, 12, %L)', current_setting('test.biz_a'), 'cash'),
+  format('select public.admin_record_payment(%L, %L, 0, 12, %L)', current_setting('test.biz_a'), 'unlimited', 'cash'),
   'not_admin', 'owner recorded their own payment');
 select rls_test.expect_refused(
   format('select public.admin_set_trial_end(%L, now() + interval ''5 years'')', current_setting('test.biz_a')),
@@ -274,7 +274,7 @@ insert into public.products (id, business_id, group_id, name)
   values ('00000000-0000-4000-c000-0000000000a3', current_setting('test.biz_a')::uuid,
           '00000000-0000-4000-b000-0000000000a3', 'Croissant');
 
--- The admin sees every business and locks A.
+-- The admin sees every business.
 reset role;
 select rls_test.act_as('d');
 set local role authenticated;
@@ -284,19 +284,28 @@ select rls_test.expect(
   (select owner_email = 'a@rls-test.invalid' from public.admin_customers() where business_id = current_setting('test.biz_a')::uuid),
   'admin overview shows the owner');
 select rls_test.expect((select count(*) = 0 from public.products), 'admin does not see business data directly');
-select public.admin_set_locked(current_setting('test.biz_a')::uuid, true);
+
+-- An old entry from the trial, to check what the Free plan can see later.
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+insert into public.daily_entries (business_id, product_id, date, produced, wasted)
+  values (current_setting('test.biz_a')::uuid, '00000000-0000-4000-c000-0000000000a3', private.sofia_today() - 10, 50, 5);
+select rls_test.expect((select count(*) = 1 from public.daily_entries), 'trial sees old history');
 
 -- Locked: A can read but not enter numbers.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_set_locked(current_setting('test.biz_a')::uuid, true);
 reset role;
 select rls_test.act_as('a');
 set local role authenticated;
 select rls_test.expect((select count(*) = 1 from public.products), 'locked business can still read');
-select rls_test.expect_refused(
-  format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, %L, 10, 1)',
-    current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3', '2026-10-07'),
+select rls_test.expect_refused(format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, private.sofia_today(), 10, 1)', current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3'),
   'denied', 'locked business entered numbers');
 
--- Unlocked but trial over: still no entries until a payment is recorded.
+-- Trial over, nothing paid: the Free plan. Numbers keep working, within its limits.
 reset role;
 select rls_test.act_as('d');
 set local role authenticated;
@@ -305,48 +314,135 @@ select public.admin_set_trial_end(current_setting('test.biz_a')::uuid, now() - i
 reset role;
 select rls_test.act_as('a');
 set local role authenticated;
+insert into public.daily_entries (business_id, product_id, date, produced, wasted)
+  values (current_setting('test.biz_a')::uuid, '00000000-0000-4000-c000-0000000000a3', private.sofia_today(), 10, 1);
+select rls_test.expect((select count(*) = 1 from public.daily_entries), 'free plan sees only the last 7 days');
+select rls_test.expect_refused(format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, private.sofia_today() - 7, 10, 1)', current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3'),
+  'denied', 'free plan entered numbers older than 7 days');
+-- Up to 5 products.
+insert into public.products (id, business_id, group_id, name, sort_order) values
+  ('00000000-0000-4000-c000-0000000000a4', current_setting('test.biz_a')::uuid, '00000000-0000-4000-b000-0000000000a3', 'P2', 2),
+  ('00000000-0000-4000-c000-0000000000a5', current_setting('test.biz_a')::uuid, '00000000-0000-4000-b000-0000000000a3', 'P3', 3),
+  ('00000000-0000-4000-c000-0000000000a6', current_setting('test.biz_a')::uuid, '00000000-0000-4000-b000-0000000000a3', 'P4', 4),
+  ('00000000-0000-4000-c000-0000000000a7', current_setting('test.biz_a')::uuid, '00000000-0000-4000-b000-0000000000a3', 'P5', 5);
 select rls_test.expect_refused(
-  format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, %L, 10, 1)',
-    current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3', '2026-10-07'),
-  'denied', 'expired trial entered numbers');
+  format('insert into public.products (business_id, group_id, name) values (%L, %L, %L)',
+    current_setting('test.biz_a'), '00000000-0000-4000-b000-0000000000a3', 'P6'),
+  'product_limit', 'free plan added a 6th product');
+-- Renaming an active product is fine, also via upsert.
+insert into public.products (id, business_id, group_id, name, sort_order)
+  values ('00000000-0000-4000-c000-0000000000a7', current_setting('test.biz_a')::uuid, '00000000-0000-4000-b000-0000000000a3', 'P5 renamed', 5)
+  on conflict (id) do update set name = excluded.name;
+-- No stock on Free.
+select rls_test.expect_refused(
+  format('insert into public.supplies (business_id, name) values (%L, %L)', current_setting('test.biz_a'), 'Flour'),
+  'denied', 'free plan added a supply');
+-- One staff member (current staff + pending invites).
+delete from public.invites where business_id = current_setting('test.biz_a')::uuid;
+insert into public.invites (business_id, email) values (current_setting('test.biz_a')::uuid, 'inv1@rls-test.invalid');
+select rls_test.expect_refused(
+  format('insert into public.invites (business_id, email) values (%L, %L)', current_setting('test.biz_a'), 'inv2@rls-test.invalid'),
+  'staff_limit', 'free plan invited a 2nd staff member');
+delete from public.invites where business_id = current_setting('test.biz_a')::uuid;
 
+-- Over the limit after a downgrade: the first 5 products and the first staff
+-- member keep working, the rest wait for an upgrade or for the owner to hide one.
+reset role;
+insert into auth.users (id, email, aud, role) values
+  ('00000000-0000-4000-a000-00000000000f', 'f@rls-test.invalid', 'authenticated', 'authenticated'),
+  ('00000000-0000-4000-a000-000000000009', '9@rls-test.invalid', 'authenticated', 'authenticated');
+insert into public.memberships (business_id, user_id, email, role, created_at) values
+  (current_setting('test.biz_a')::uuid, '00000000-0000-4000-a000-00000000000f', 'f@rls-test.invalid', 'staff', now() - interval '2 days'),
+  (current_setting('test.biz_a')::uuid, '00000000-0000-4000-a000-000000000009', '9@rls-test.invalid', 'staff', now() - interval '1 day');
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_set_trial_end(current_setting('test.biz_a')::uuid, now() + interval '10 days');
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+insert into public.products (id, business_id, group_id, name, sort_order)
+  values ('00000000-0000-4000-c000-0000000000a8', current_setting('test.biz_a')::uuid, '00000000-0000-4000-b000-0000000000a3', 'P6', 6);
 reset role;
 select rls_test.act_as('d');
 set local role authenticated;
+select public.admin_set_trial_end(current_setting('test.biz_a')::uuid, now() - interval '1 day');
+reset role;
+select rls_test.act_as('a');
+set local role authenticated;
+select rls_test.expect_refused(format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, private.sofia_today(), 10, 1)', current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a8'),
+  'denied', 'product beyond the free limit took numbers');
+-- Renaming or reordering still works while over the limit (that's how the
+-- owner chooses which products stay), also through an upsert.
+insert into public.products (id, business_id, group_id, name, sort_order)
+  values ('00000000-0000-4000-c000-0000000000a5', current_setting('test.biz_a')::uuid, '00000000-0000-4000-b000-0000000000a3', 'P3 renamed', 3)
+  on conflict (id) do update set name = excluded.name;
+-- Hiding one of the first five makes room for the 6th.
+update public.products set archived = true where id = '00000000-0000-4000-c000-0000000000a4';
+insert into public.daily_entries (business_id, product_id, date, produced, wasted)
+  values (current_setting('test.biz_a')::uuid, '00000000-0000-4000-c000-0000000000a8', private.sofia_today(), 10, 1);
+select rls_test.expect_refused(
+  'update public.products set archived = false where id = ''00000000-0000-4000-c000-0000000000a4''',
+  'product_limit', 'free plan un-hid a 6th product');
+reset role;
+select rls_test.act_as('f');
+set local role authenticated;
+insert into public.daily_entries (business_id, product_id, date, produced, wasted)
+  values (current_setting('test.biz_a')::uuid, '00000000-0000-4000-c000-0000000000a5', private.sofia_today(), 10, 1);
+reset role;
+select rls_test.act_as('9');
+set local role authenticated;
+select rls_test.expect((select count(*) >= 1 from public.products), 'staff beyond the limit can still read');
+select rls_test.expect_refused(format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, private.sofia_today(), 10, 1)', current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a6'),
+  'denied', 'staff beyond the free limit entered numbers');
+
+-- Paying for Standard: stock, full history, 15 products.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select rls_test.expect_refused(
+  format('select public.admin_record_payment(%L, %L, 10, 1, %L)', current_setting('test.biz_a'), 'gold', 'bank'),
+  'bad_tier', 'payment for an unknown plan');
 select set_config('test.paid_until',
-  public.admin_record_payment(current_setting('test.biz_a')::uuid, 15, 1, 'bank')::text, true);
+  public.admin_record_payment(current_setting('test.biz_a')::uuid, 'standard', 10, 1, 'bank')::text, true);
 select rls_test.expect(
   current_setting('test.paid_until')::timestamptz = now() + interval '1 month',
-  'a monthly payment after expiry runs a month from today');
+  'a monthly payment after the trial runs a month from today');
 -- Paying early, during the trial, adds the paid period after the trial.
 select rls_test.expect(
-  (select public.admin_record_payment(current_setting('test.biz_b')::uuid, 150, 12, 'revolut')
+  (select public.admin_record_payment(current_setting('test.biz_b')::uuid, 'unlimited', 200, 12, 'revolut')
      = (select trial_ends_at from public.admin_customers() where business_id = current_setting('test.biz_b')::uuid)
        + interval '12 months'),
   'a yearly payment during the trial starts when the trial ends');
 select rls_test.expect(
-  (select plan = 'monthly' and total_paid = 15 from public.admin_customers()
+  (select plan = 'monthly' and tier = 'standard' and total_paid = 10 from public.admin_customers()
    where business_id = current_setting('test.biz_a')::uuid),
   'payment shows in the overview');
 select public.admin_save_notes(current_setting('test.biz_a')::uuid, '0888 123 456', 'Paid by bank');
-select public.admin_save_settings(15, 150, 'IBAN BG00 TEST', 'IBAN BG00 TEST', 'https://revolut.me/test', 'Help@Example.com');
+select public.admin_save_settings(10, 100, 20, 200, 'IBAN BG00 TEST', 'IBAN BG00 TEST', 'https://revolut.me/test', 'Help@Example.com');
 
 reset role;
 select rls_test.act_as('a');
 set local role authenticated;
-insert into public.daily_entries (business_id, product_id, date, produced, wasted)
-  values (current_setting('test.biz_a')::uuid, '00000000-0000-4000-c000-0000000000a3', '2026-10-07', 10, 1);
-select rls_test.expect((select count(*) = 1 from public.daily_entries), 'paid business enters numbers again');
-select rls_test.expect((select monthly_price = 15 from public.app_settings), 'members see the prices the admin set');
+select rls_test.expect((select count(*) = 4 from public.daily_entries), 'standard plan sees full history again');
+insert into public.supplies (id, business_id, name)
+  values ('00000000-0000-4000-d000-0000000000a1', current_setting('test.biz_a')::uuid, 'Flour');
+delete from public.supplies where id = '00000000-0000-4000-d000-0000000000a1';
+update public.products set archived = false where id = '00000000-0000-4000-c000-0000000000a4';
+select rls_test.expect((select standard_monthly = 10 and unlimited_yearly = 200 from public.app_settings),
+  'members see the prices the admin set');
 select rls_test.expect(
   (select revolut_link = 'https://revolut.me/test' and contact_email = 'help@example.com' from public.app_settings),
   'members see the Revolut link and contact email');
 select rls_test.expect_refused(
-  'select public.admin_save_settings(1, 1, '''', '''', ''https://evil.example'', '''')',
+  'select public.admin_save_settings(1, 1, 1, 1, '''', '''', ''https://evil.example'', '''')',
   'not_admin', 'owner changed the payment link');
-select rls_test.expect((select paid_until > now() from public.subscriptions), 'member sees their paid period');
+select rls_test.expect((select paid_until > now() and tier = 'standard' from public.subscriptions), 'member sees their plan');
+-- Standard allows 2 staff; A has 2 (f and 9).
+select rls_test.expect_refused(
+  format('insert into public.invites (business_id, email) values (%L, %L)', current_setting('test.biz_a'), 'inv3@rls-test.invalid'),
+  'staff_limit', 'standard plan invited a 3rd staff member');
 
--- Deleting the payment (recorded by mistake) takes access away again.
+-- Deleting the payment (recorded by mistake) puts A back on Free.
 reset role;
 select rls_test.act_as('d');
 set local role authenticated;
@@ -354,13 +450,15 @@ select public.admin_delete_payment((select id from public.admin_payments(current
 reset role;
 select rls_test.act_as('a');
 set local role authenticated;
+update public.products set archived = true where id = '00000000-0000-4000-c000-0000000000a4';
+select rls_test.expect((select paid_until is null and tier is null from public.subscriptions), 'payment removed');
 select rls_test.expect_refused(
-  format('insert into public.daily_entries (business_id, product_id, date, produced, wasted) values (%L, %L, %L, 10, 1)',
-    current_setting('test.biz_a'), '00000000-0000-4000-c000-0000000000a3', '2026-10-08'),
-  'denied', 'numbers entered after the payment was removed');
+  format('insert into public.supplies (business_id, name) values (%L, %L)', current_setting('test.biz_a'), 'Flour'),
+  'denied', 'stock after the payment was removed');
+select rls_test.expect((select count(*) = 3 from public.daily_entries), 'old history hidden again on Free');
 
--- 9. Units, wording and supplies. B is active (trial + yearly payment); C is
--- now B's staff (joined in step 7).
+-- 9. Units, wording and supplies. B is on its trial (Unlimited) with a
+-- yearly payment after it; C is now B's staff (joined in step 7).
 reset role;
 select rls_test.act_as('b');
 set local role authenticated;

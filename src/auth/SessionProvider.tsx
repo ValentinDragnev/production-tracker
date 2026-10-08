@@ -19,6 +19,8 @@ export type SessionState =
       status: 'ready'
       email: string
       business: BusinessMembership
+      /** Staff only: 1 for the earliest-added staff member, 2 next, ... */
+      staffRank: number | null
       /** null if it couldn't be read; the database still enforces access. */
       subscription: Subscription | null
       prices: PriceSettings | null
@@ -77,8 +79,11 @@ export function SessionProvider({ client, children }: { client: SupabaseClient; 
         return
       }
       const { id, name } = membership.businesses
-      const [subscription, prices] = await loadBilling(client, id)
-      setState({ status: 'ready', email, business: { id, name, role: membership.role }, subscription, prices })
+      const [[subscription, prices], staffRank] = await Promise.all([
+        loadBilling(client, id),
+        membership.role === 'staff' ? loadStaffRank(client, id, userId) : Promise.resolve(null),
+      ])
+      setState({ status: 'ready', email, business: { id, name, role: membership.role }, staffRank, subscription, prices })
     } catch {
       setState({ status: 'error' })
     }
@@ -157,6 +162,23 @@ async function loadBilling(client: SupabaseClient, businessId: string) {
     loadSubscription(client, businessId).catch(() => null),
     loadPriceSettings(client).catch(() => null),
   ])
+}
+
+/**
+ * Position among the business's staff, oldest first (the database orders the
+ * same way). Smaller plans keep the earliest staff. null if unknown.
+ */
+async function loadStaffRank(client: SupabaseClient, businessId: string, userId: string): Promise<number | null> {
+  const { data, error } = await client
+    .from('memberships')
+    .select('user_id')
+    .eq('business_id', businessId)
+    .eq('role', 'staff')
+    .order('created_at')
+    .order('user_id')
+  if (error) return null
+  const index = (data as { user_id: string }[]).findIndex((m) => m.user_id === userId)
+  return index === -1 ? null : index + 1
 }
 
 /** Like useSession, but returns null in demo mode (no SessionProvider). */

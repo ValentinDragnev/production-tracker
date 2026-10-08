@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { PLAN_LIMITS, productsInPlan, type PlanLimits } from '../lib/subscription'
 import type { Role } from './team'
 import type { BusinessSettings, DataStore, Product, ProductGroup, Supply } from './types'
 
@@ -7,8 +8,14 @@ interface StoreState {
   role: Role
   /** True when running on sample data in this browser only. */
   demo: boolean
-  /** False when the trial or paid period is over: reports only, no new numbers. */
+  /** False when locked, or for staff beyond the plan: reports only. */
   canEdit: boolean
+  /** True for staff the plan doesn't cover (so the screen can say why). */
+  staffBlocked: boolean
+  /** What the current plan allows (Unlimited in demo mode). */
+  limits: PlanLimits
+  /** Products the plan covers; others are read-only on Today. */
+  inPlan: Set<string>
   /** Asks the server again whether entering numbers is allowed. */
   recheckAccess(): void
   groups: ProductGroup[]
@@ -31,6 +38,8 @@ interface Props {
   role: Role
   demo?: boolean
   canEdit?: boolean
+  staffBlocked?: boolean
+  limits?: PlanLimits
   onRecheckAccess?: () => void
   /** Demo only: wipes local data and reseeds the sample business. */
   onResetDemo?: () => void
@@ -42,6 +51,8 @@ export function StoreProvider({
   role,
   demo = false,
   canEdit = true,
+  staffBlocked = false,
+  limits = PLAN_LIMITS.unlimited,
   onRecheckAccess,
   onResetDemo,
   children,
@@ -102,6 +113,9 @@ export function StoreProvider({
         role,
         demo,
         canEdit,
+        staffBlocked,
+        limits,
+        inPlan: productsInPlan(groups, products, limits.products),
         recheckAccess,
         groups,
         products,

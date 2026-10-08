@@ -4,7 +4,7 @@ import { InvitePanel } from '../components/InvitePanel'
 import { UNIT_NAME, UNIT_SHORT } from '../components/labels'
 import { HelpSection, SubscriptionSection } from '../components/Subscription'
 import { useStore } from '../data/StoreProvider'
-import { EmailInUseError, Team, looksLikeEmail, normalizeEmail, type Invite, type Member } from '../data/team'
+import { EmailInUseError, StaffLimitError, Team, looksLikeEmail, normalizeEmail, type Invite, type Member } from '../data/team'
 import type { EntryLabels, Product, ProductGroup, Supply } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
 import type { Lang } from '../i18n/messages'
@@ -182,6 +182,23 @@ function WordingSection() {
 }
 
 function SuppliesSection() {
+  const { limits } = useStore()
+  // A paid feature: on Free the list stays (and returns with an upgrade).
+  if (!limits.stock) return <SuppliesUpsell />
+  return <SuppliesList />
+}
+
+function SuppliesUpsell() {
+  const { t } = useI18n()
+  return (
+    <section className="group">
+      <h2 className="group__title">{t('supplies')}</h2>
+      <p className="muted">{t('stockUpsellTitle')}</p>
+    </section>
+  )
+}
+
+function SuppliesList() {
   const { t, locale } = useI18n()
   const { store, supplies, refresh } = useStore()
   const sorted = sortByOrder(supplies)
@@ -243,17 +260,20 @@ function SuppliesSection() {
 
 function ProductsSection() {
   const { t } = useI18n()
-  const { store, groups, products, refresh } = useStore()
+  const { store, groups, products, refresh, limits, inPlan } = useStore()
   const [addingGroup, setAddingGroup] = useState(false)
 
   const sortedGroups = sortByOrder(groups)
+  const activeCount = products.filter((p) => !p.archived).length
+  const atLimit = limits.products !== null && activeCount >= limits.products
 
   // Runs a change, then reloads; tells the user if it didn't go through.
   const change = async (fn: () => Promise<unknown>) => {
     try {
       await fn()
-    } catch {
-      window.alert(t('actionFailed'))
+    } catch (err) {
+      const limitHit = err instanceof Object && 'message' in err && err.message === 'product_limit'
+      window.alert(limitHit ? t('productLimitReached', { limit: limits.products ?? 0 }) : t('actionFailed'))
     }
     await refresh()
   }
@@ -279,6 +299,11 @@ function ProductsSection() {
     <section className="group">
       <h2 className="group__title">{t('productsAndGroups')}</h2>
       <p className="muted">{t('hideHint')}</p>
+      {limits.products !== null && (
+        <p className={activeCount > limits.products ? 'plan__usage plan__usage--over' : 'plan__usage'}>
+          {t('usageProducts', { used: activeCount, limit: limits.products })}
+        </p>
+      )}
 
       {sortedGroups.map((group, gi) => {
         const groupProducts = sortByOrder(products.filter((p) => p.groupId === group.id))
@@ -303,7 +328,14 @@ function ProductsSection() {
                 hidden={product.archived}
                 indent
                 label={t('productName')}
-                meta={product.unit === 'pcs' ? undefined : t(UNIT_SHORT[product.unit])}
+                meta={
+                  [
+                    product.unit === 'pcs' ? '' : t(UNIT_SHORT[product.unit]),
+                    product.archived || inPlan.has(product.id) ? '' : t('notInPlan'),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || undefined
+                }
                 extras={{ unit: product.unit }}
                 onSave={({ name, unit }) => saveProduct({ ...product, name, unit })}
                 onToggleHidden={() => saveProduct({ ...product, archived: !product.archived })}
@@ -315,6 +347,9 @@ function ProductsSection() {
                 deleteConfirm={t('deleteProductConfirm', { name: product.name })}
               />
             ))}
+            {atLimit ? (
+              <p className="row row--note">{t('productLimitReached', { limit: limits.products ?? 0 })}</p>
+            ) : (
             <AddButton
               label={t('addProduct')}
               fieldLabel={t('productName')}
@@ -331,6 +366,7 @@ function ProductsSection() {
                 })
               }
             />
+            )}
           </div>
         )
       })}
@@ -358,10 +394,11 @@ function ProductsSection() {
 
 function TeamSection({ team, myEmail, businessName }: { team: Team; myEmail: string; businessName: string }) {
   const { t } = useI18n()
+  const { limits } = useStore()
   const [members, setMembers] = useState<Member[] | null>(null)
   const [invites, setInvites] = useState<Invite[]>([])
   const [email, setEmail] = useState('')
-  const [error, setError] = useState<'emailInvalid' | 'emailInUse' | 'actionFailed' | null>(null)
+  const [error, setError] = useState<'emailInvalid' | 'emailInUse' | 'staffLimitReached' | 'actionFailed' | null>(null)
   // Which invite's send panel is open, and whether it was just added.
   const [sharing, setSharing] = useState<{ email: string; justAdded: boolean } | null>(null)
 
@@ -386,7 +423,9 @@ function TeamSection({ team, myEmail, businessName }: { team: Team; myEmail: str
       await load()
       return true
     } catch (err) {
-      setError(err instanceof EmailInUseError ? 'emailInUse' : 'actionFailed')
+      setError(
+        err instanceof EmailInUseError ? 'emailInUse' : err instanceof StaffLimitError ? 'staffLimitReached' : 'actionFailed',
+      )
       return false
     }
   }
@@ -395,6 +434,11 @@ function TeamSection({ team, myEmail, businessName }: { team: Team; myEmail: str
     <section className="group">
       <h2 className="group__title">{t('staff')}</h2>
       <p className="muted">{t('staffHint')}</p>
+      {limits.staff !== null && members && (
+        <p className="plan__usage">
+          {t('usageStaff', { used: members.filter((m) => m.role === 'staff').length + invites.length, limit: limits.staff })}
+        </p>
+      )}
       <div className="card card--list">
         {members?.map((m) => (
           <div key={m.userId} className="row">

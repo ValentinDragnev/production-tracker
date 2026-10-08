@@ -19,7 +19,10 @@ interface DueReminder {
   kind: ReminderKind
   period_end: string
   is_trial: boolean
+  tier: 'standard' | 'unlimited' | null
 }
+
+const num = (v: number | string | null) => (v === null ? null : Number(v))
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -49,7 +52,9 @@ Deno.serve(async (req) => {
 
   const { data: settings, error: settingsError } = await db
     .from('app_settings')
-    .select('monthly_price, yearly_price, currency, payment_info_bg, payment_info_en, revolut_link, contact_email')
+    .select(
+      'standard_monthly, standard_yearly, unlimited_monthly, unlimited_yearly, currency, payment_info_bg, payment_info_en, revolut_link, contact_email',
+    )
     .single()
   if (settingsError) {
     // Give the reminders back so tomorrow's run tries again.
@@ -72,10 +77,13 @@ Deno.serve(async (req) => {
     const mail = renderReminder({
       kind: r.kind,
       isTrial: r.is_trial,
+      tier: r.tier,
       businessName: r.business_name,
       periodEnd: r.period_end,
-      monthlyPrice: settings.monthly_price === null ? null : Number(settings.monthly_price),
-      yearlyPrice: settings.yearly_price === null ? null : Number(settings.yearly_price),
+      standardMonthly: num(settings.standard_monthly),
+      standardYearly: num(settings.standard_yearly),
+      unlimitedMonthly: num(settings.unlimited_monthly),
+      unlimitedYearly: num(settings.unlimited_yearly),
       currency: settings.currency,
       revolutLink: settings.revolut_link,
       paymentInfoBg: settings.payment_info_bg,

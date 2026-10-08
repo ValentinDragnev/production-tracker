@@ -13,7 +13,8 @@ interface PeriodNavProps {
   subtitle?: string
   prevLabel: string
   nextLabel: string
-  onPrev(): void
+  /** Omit to hide the back arrow (e.g. the Free plan's 7-day window). */
+  onPrev?: () => void
   /** Omit to hide the forward arrow (e.g. you can't go past today). */
   onNext?: () => void
   extra?: ReactNode
@@ -23,9 +24,13 @@ interface PeriodNavProps {
 export function PeriodNav({ title, subtitle, prevLabel, nextLabel, onPrev, onNext, extra }: PeriodNavProps) {
   return (
     <header className="period">
-      <button type="button" className="icon-btn" aria-label={prevLabel} onClick={onPrev}>
-        ‹
-      </button>
+      {onPrev ? (
+        <button type="button" className="icon-btn" aria-label={prevLabel} onClick={onPrev}>
+          ‹
+        </button>
+      ) : (
+        <span className="icon-btn icon-btn--placeholder" aria-hidden="true" />
+      )}
       <div className="period__text">
         {subtitle && <div className="period__subtitle">{subtitle}</div>}
         <h1 className="period__title">{title}</h1>

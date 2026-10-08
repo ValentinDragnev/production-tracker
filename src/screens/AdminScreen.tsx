@@ -5,17 +5,20 @@ import { looksLikeEmail } from '../data/team'
 import { useI18n } from '../i18n/I18nProvider'
 import type { MessageKey } from '../i18n/messages'
 import { formatMoment, todayInSofia } from '../lib/dates'
-import { canEnterNumbers, needsReminder, subscriptionState, type SubscriptionState } from '../lib/subscription'
+import { needsReminder, planState, type PaidTier, type PlanState } from '../lib/subscription'
 
-type Filter = 'all' | 'attention' | 'trial' | 'paid' | 'expired'
+type Filter = 'all' | 'attention' | 'trial' | 'paid' | 'free' | 'locked'
 
 const FILTERS: { id: Filter; label: MessageKey }[] = [
   { id: 'attention', label: 'filterAttention' },
   { id: 'all', label: 'filterAll' },
   { id: 'trial', label: 'filterTrial' },
   { id: 'paid', label: 'filterPaid' },
-  { id: 'expired', label: 'filterExpired' },
+  { id: 'free', label: 'filterFree' },
+  { id: 'locked', label: 'filterLocked' },
 ]
+
+const TIER_NAME: Record<PaidTier, MessageKey> = { standard: 'planStandard', unlimited: 'planUnlimited' }
 
 const METHODS: { id: PaymentMethod; label: MessageKey }[] = [
   { id: 'bank', label: 'methodBank' },
@@ -27,12 +30,19 @@ const METHODS: { id: PaymentMethod; label: MessageKey }[] = [
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** Needs a call or a message: access ends within a week, or already ended. */
-function needsAttention(state: SubscriptionState): boolean {
-  return needsReminder(state) || !canEnterNumbers(state)
+/** How long after moving to Free a customer still counts as worth a call. */
+const RECENTLY_FREE_DAYS = 14
+
+/**
+ * Worth a call or a message: a trial or plan ending within a week, moved to
+ * Free in the last two weeks, or locked.
+ */
+function needsAttention(state: PlanState, now = Date.now()): boolean {
+  if (state.kind === 'free') return state.endedAt !== null && now - state.endedAt.getTime() < RECENTLY_FREE_DAYS * DAY_MS
+  return needsReminder(state) || state.kind === 'locked'
 }
 
-function matches(filter: Filter, state: SubscriptionState): boolean {
+function matches(filter: Filter, state: PlanState): boolean {
   switch (filter) {
     case 'all':
       return true
@@ -42,8 +52,10 @@ function matches(filter: Filter, state: SubscriptionState): boolean {
       return state.kind === 'trial'
     case 'paid':
       return state.kind === 'paid'
-    case 'expired':
-      return state.kind === 'expired' || state.kind === 'locked'
+    case 'free':
+      return state.kind === 'free'
+    case 'locked':
+      return state.kind === 'locked'
   }
 }
 
@@ -87,7 +99,7 @@ export function AdminScreen() {
     )
   }
 
-  const withState = (customers ?? []).map((c) => ({ customer: c, state: subscriptionState(c.subscription) }))
+  const withState = (customers ?? []).map((c) => ({ customer: c, state: planState(c.subscription) }))
   const q = query.trim().toLowerCase()
   const shown = withState.filter(
     ({ customer, state }) =>
@@ -175,19 +187,25 @@ function Activity({ customer }: { customer: Customer }) {
   )
 }
 
-function StatusPill({ state }: { state: SubscriptionState }) {
+function StatusPill({ state }: { state: PlanState }) {
   const { t, locale } = useI18n()
   switch (state.kind) {
     case 'locked':
       return <span className="pill pill--high">{t('statusLocked')}</span>
-    case 'expired':
-      return <span className="pill pill--high">{t('statusExpired', { date: formatMoment(state.endedAt, locale) })}</span>
+    case 'free':
+      return <span className="pill pill--none">{t('statusFree')}</span>
     case 'trial':
-    case 'paid': {
-      const tone = needsReminder(state) ? 'pill--medium' : state.kind === 'paid' ? 'pill--low' : 'pill--trial'
-      const key = state.kind === 'trial' ? 'statusTrial' : 'statusPaid'
-      return <span className={`pill ${tone}`}>{t(key, { date: formatMoment(state.endsAt, locale) })}</span>
-    }
+      return (
+        <span className={`pill ${needsReminder(state) ? 'pill--medium' : 'pill--trial'}`}>
+          {t('statusTrial', { date: formatMoment(state.endsAt, locale) })}
+        </span>
+      )
+    case 'paid':
+      return (
+        <span className={`pill ${needsReminder(state) ? 'pill--medium' : 'pill--low'}`}>
+          {t('statusPaid', { plan: t(TIER_NAME[state.tier]), date: formatMoment(state.endsAt, locale) })}
+        </span>
+      )
   }
 }
 
@@ -203,7 +221,7 @@ function CustomerDetail({ admin, customer, prices, onBack, onChanged }: DetailPr
   const { t, locale } = useI18n()
   const [payments, setPayments] = useState<Payment[] | null>(null)
   const [busy, setBusy] = useState(false)
-  const state = subscriptionState(customer.subscription)
+  const state = planState(customer.subscription)
   const money = (n: number) => new Intl.NumberFormat(locale, { style: 'currency', currency: prices.currency }).format(n)
 
   const loadPayments = useCallback(async () => {
@@ -304,6 +322,7 @@ function CustomerDetail({ admin, customer, prices, onBack, onChanged }: DetailPr
 
       <PaymentForm
         prices={prices}
+        initialTier={customer.subscription.tier ?? 'standard'}
         busy={busy}
         onSubmit={(p) => act(() => admin.recordPayment({ businessId: customer.businessId, ...p }))}
       />
@@ -350,23 +369,37 @@ function CustomerDetail({ admin, customer, prices, onBack, onChanged }: DetailPr
 
 function PaymentForm(props: {
   prices: PriceSettings
+  initialTier: PaidTier
   busy: boolean
   /** Resolves true when the payment was recorded. */
-  onSubmit(p: { amount: number; months: number; method: PaymentMethod; paidOn: string; note: string }): Promise<boolean>
+  onSubmit(p: {
+    tier: PaidTier
+    amount: number
+    months: number
+    method: PaymentMethod
+    paidOn: string
+    note: string
+  }): Promise<boolean>
 }) {
   const { t } = useI18n()
-  const priceFor = (months: number) => (months === 12 ? props.prices.yearlyPrice : props.prices.monthlyPrice)
+  const priceFor = (tier: PaidTier, months: number) => {
+    const p = props.prices
+    if (tier === 'standard') return months === 12 ? p.standardYearly : p.standardMonthly
+    return months === 12 ? p.unlimitedYearly : p.unlimitedMonthly
+  }
+  const [tier, setTier] = useState<PaidTier>(props.initialTier)
   const [months, setMonths] = useState(1)
-  const [amount, setAmount] = useState(priceFor(1)?.toString() ?? '')
+  const [amount, setAmount] = useState(priceFor(props.initialTier, 1)?.toString() ?? '')
   const [method, setMethod] = useState<PaymentMethod>('bank')
   const [paidOn, setPaidOn] = useState(todayInSofia())
   const [note, setNote] = useState('')
   const [error, setError] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  const choose = (m: number) => {
+  const choose = (nextTier: PaidTier, m: number) => {
+    setTier(nextTier)
     setMonths(m)
-    setAmount(priceFor(m)?.toString() ?? '')
+    setAmount(priceFor(nextTier, m)?.toString() ?? '')
     setSaved(false)
   }
 
@@ -377,7 +410,7 @@ function PaymentForm(props: {
       setError(true)
       return
     }
-    if (await props.onSubmit({ amount: value, months, method, paidOn, note })) {
+    if (await props.onSubmit({ tier, amount: value, months, method, paidOn, note })) {
       setNote('')
       setSaved(true)
     }
@@ -388,13 +421,26 @@ function PaymentForm(props: {
       <h2 className="group__title">{t('recordPayment')}</h2>
       <form className="card admin__form" onSubmit={submit} noValidate>
         <div className="segmented">
+          {(['standard', 'unlimited'] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={tier === p ? 'is-active' : ''}
+              aria-pressed={tier === p}
+              onClick={() => choose(p, months)}
+            >
+              {t(TIER_NAME[p])}
+            </button>
+          ))}
+        </div>
+        <div className="segmented">
           {[1, 12].map((m) => (
             <button
               key={m}
               type="button"
               className={months === m ? 'is-active' : ''}
               aria-pressed={months === m}
-              onClick={() => choose(m)}
+              onClick={() => choose(tier, m)}
             >
               {t(m === 12 ? 'planYear' : 'planMonth')}
             </button>
@@ -499,8 +545,11 @@ function NotesCard(props: { phone: string; notes: string; onSave(phone: string, 
 
 function PricesCard(props: { admin: Admin; prices: PriceSettings; onSaved(): Promise<void> }) {
   const { t } = useI18n()
-  const [monthly, setMonthly] = useState(props.prices.monthlyPrice?.toString() ?? '')
-  const [yearly, setYearly] = useState(props.prices.yearlyPrice?.toString() ?? '')
+  const initial = (n: number | null) => n?.toString() ?? ''
+  const [stdMonthly, setStdMonthly] = useState(initial(props.prices.standardMonthly))
+  const [stdYearly, setStdYearly] = useState(initial(props.prices.standardYearly))
+  const [unlMonthly, setUnlMonthly] = useState(initial(props.prices.unlimitedMonthly))
+  const [unlYearly, setUnlYearly] = useState(initial(props.prices.unlimitedYearly))
   const [infoBg, setInfoBg] = useState(props.prices.paymentInfoBg)
   const [infoEn, setInfoEn] = useState(props.prices.paymentInfoEn)
   const [revolut, setRevolut] = useState(props.prices.revolutLink)
@@ -527,19 +576,20 @@ function PricesCard(props: { admin: Admin; prices: PriceSettings; onSaved(): Pro
         noValidate
         onSubmit={async (e) => {
           e.preventDefault()
-          const m = parse(monthly)
-          const y = parse(yearly)
+          const amounts = [stdMonthly, stdYearly, unlMonthly, unlYearly].map(parse)
           const badLink = revolut.trim() !== '' && !/^https:\/\/\S+$/.test(revolut.trim())
           const badEmail = contact.trim() !== '' && !looksLikeEmail(contact)
-          if (m === undefined || y === undefined || badLink || badEmail) {
+          if (amounts.includes(undefined) || badLink || badEmail) {
             setStatus('error')
             return
           }
           try {
             await props.admin.saveSettings({
               ...props.prices,
-              monthlyPrice: m,
-              yearlyPrice: y,
+              standardMonthly: amounts[0] ?? null,
+              standardYearly: amounts[1] ?? null,
+              unlimitedMonthly: amounts[2] ?? null,
+              unlimitedYearly: amounts[3] ?? null,
               paymentInfoBg: infoBg,
               paymentInfoEn: infoEn,
               revolutLink: revolut.trim(),
@@ -552,16 +602,27 @@ function PricesCard(props: { admin: Admin; prices: PriceSettings; onSaved(): Pro
           }
         }}
       >
-        <div className="admin__pair">
-          <label className="field">
-            <span className="field__label">{t('monthlyPrice')}</span>
-            <input className="field__input" inputMode="decimal" value={monthly} onChange={changed(setMonthly)} />
-          </label>
-          <label className="field">
-            <span className="field__label">{t('yearlyPrice')}</span>
-            <input className="field__input" inputMode="decimal" value={yearly} onChange={changed(setYearly)} />
-          </label>
-        </div>
+        {(
+          [
+            ['planStandard', stdMonthly, setStdMonthly, stdYearly, setStdYearly],
+            ['planUnlimited', unlMonthly, setUnlMonthly, unlYearly, setUnlYearly],
+          ] as const
+        ).map(([name, monthly, setMonthly, yearly, setYearly]) => (
+          <fieldset key={name} className="admin__plan">
+            <legend className="admin__plan-name">{t(name)}</legend>
+            <div className="admin__pair">
+              <label className="field">
+                <span className="field__label">{t('monthlyPrice')}</span>
+                <input className="field__input" inputMode="decimal" value={monthly} onChange={changed(setMonthly)} />
+              </label>
+              <label className="field">
+                <span className="field__label">{t('yearlyPrice')}</span>
+                <input className="field__input" inputMode="decimal" value={yearly} onChange={changed(setYearly)} />
+              </label>
+            </div>
+          </fieldset>
+        ))}
+        <p className="field__hint">{t('yearlyPriceHint')}</p>
         <label className="field">
           <span className="field__label">{t('revolutLink')}</span>
           <input

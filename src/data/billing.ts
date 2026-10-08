@@ -1,9 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Subscription } from '../lib/subscription'
+import type { PaidTier, Subscription } from '../lib/subscription'
 
+/** Monthly and yearly price per paid plan; null when not offered. */
 export interface PriceSettings {
-  monthlyPrice: number | null
-  yearlyPrice: number | null
+  standardMonthly: number | null
+  standardYearly: number | null
+  unlimitedMonthly: number | null
+  unlimitedYearly: number | null
   currency: string
   paymentInfoBg: string
   paymentInfoEn: string
@@ -16,22 +19,26 @@ export interface PriceSettings {
 export async function loadSubscription(client: SupabaseClient, businessId: string): Promise<Subscription> {
   const { data, error } = await client
     .from('subscriptions')
-    .select('trial_ends_at, paid_until, plan, locked')
+    .select('trial_ends_at, paid_until, plan, tier, locked')
     .eq('business_id', businessId)
     .single()
   if (error) throw error
-  return { trialEndsAt: data.trial_ends_at, paidUntil: data.paid_until, plan: data.plan, locked: data.locked }
+  return { trialEndsAt: data.trial_ends_at, paidUntil: data.paid_until, plan: data.plan, tier: data.tier, locked: data.locked }
 }
 
 export async function loadPriceSettings(client: SupabaseClient): Promise<PriceSettings> {
   const { data, error } = await client
     .from('app_settings')
-    .select('monthly_price, yearly_price, currency, payment_info_bg, payment_info_en, revolut_link, contact_email')
+    .select(
+      'standard_monthly, standard_yearly, unlimited_monthly, unlimited_yearly, currency, payment_info_bg, payment_info_en, revolut_link, contact_email',
+    )
     .single()
   if (error) throw error
   return {
-    monthlyPrice: toNumber(data.monthly_price),
-    yearlyPrice: toNumber(data.yearly_price),
+    standardMonthly: toNumber(data.standard_monthly),
+    standardYearly: toNumber(data.standard_yearly),
+    unlimitedMonthly: toNumber(data.unlimited_monthly),
+    unlimitedYearly: toNumber(data.unlimited_yearly),
     currency: data.currency,
     paymentInfoBg: data.payment_info_bg,
     paymentInfoEn: data.payment_info_en,
@@ -67,6 +74,7 @@ export interface Customer {
 
 export interface Payment {
   id: string
+  tier: PaidTier | null
   amount: number
   currency: string
   paidOn: string
@@ -86,6 +94,7 @@ interface CustomerRow {
   trial_ends_at: string
   paid_until: string | null
   plan: 'monthly' | 'yearly' | null
+  tier: PaidTier | null
   locked: boolean
   products_count: number
   last_entry_at: string | null
@@ -97,6 +106,7 @@ interface CustomerRow {
 
 interface PaymentRow {
   id: string
+  tier: PaidTier | null
   amount: number | string
   currency: string
   paid_on: string
@@ -120,7 +130,7 @@ export class Admin {
       createdAt: r.created_at,
       ownerEmail: r.owner_email,
       staffCount: r.staff_count,
-      subscription: { trialEndsAt: r.trial_ends_at, paidUntil: r.paid_until, plan: r.plan, locked: r.locked },
+      subscription: { trialEndsAt: r.trial_ends_at, paidUntil: r.paid_until, plan: r.plan, tier: r.tier, locked: r.locked },
       productsCount: r.products_count,
       lastEntryAt: r.last_entry_at,
       daysEnteredLast7: r.days_entered_last_7,
@@ -135,6 +145,7 @@ export class Admin {
     if (error) throw error
     return (data as PaymentRow[]).map((p) => ({
       id: p.id,
+      tier: p.tier,
       amount: toNumber(p.amount) ?? 0,
       currency: p.currency,
       paidOn: p.paid_on,
@@ -148,6 +159,7 @@ export class Admin {
 
   async recordPayment(p: {
     businessId: string
+    tier: PaidTier
     amount: number
     months: number
     method: PaymentMethod
@@ -156,6 +168,7 @@ export class Admin {
   }): Promise<void> {
     const { error } = await this.client.rpc('admin_record_payment', {
       bid: p.businessId,
+      tier: p.tier,
       amount: p.amount,
       months: p.months,
       method: p.method,
@@ -187,8 +200,10 @@ export class Admin {
 
   async saveSettings(s: PriceSettings): Promise<void> {
     const { error } = await this.client.rpc('admin_save_settings', {
-      monthly_price: s.monthlyPrice,
-      yearly_price: s.yearlyPrice,
+      standard_monthly: s.standardMonthly,
+      standard_yearly: s.standardYearly,
+      unlimited_monthly: s.unlimitedMonthly,
+      unlimited_yearly: s.unlimitedYearly,
       payment_info_bg: s.paymentInfoBg,
       payment_info_en: s.paymentInfoEn,
       revolut_link: s.revolutLink,

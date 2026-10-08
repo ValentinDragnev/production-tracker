@@ -48,6 +48,7 @@ export class Team {
       .from('invites')
       .insert({ business_id: this.businessId, email: normalizeEmail(email), role: 'staff' })
     if (error?.message === 'email_in_use') throw new EmailInUseError()
+    if (error?.message === 'staff_limit') throw new StaffLimitError()
     // Already invited here is fine: there's no update policy, so no upsert.
     if (error && error.code !== '23505') throw error
   }
@@ -71,6 +72,13 @@ export class Team {
 export class EmailInUseError extends Error {
   constructor() {
     super('email_in_use')
+  }
+}
+
+/** The business's plan has no room for more staff. */
+export class StaffLimitError extends Error {
+  constructor() {
+    super('staff_limit')
   }
 }
 

@@ -42,6 +42,27 @@ throw away for each product, so they can't adjust production.
    "Average made 120, average thrown away 25 → try ~95–100."
 6. **Staff** (owner): invite by email, remove.
 
+## Plans (added 2026-10-08)
+
+| | Free | Standard (10 €/month) | Unlimited (20 €/month) |
+|---|---|---|---|
+| Active products | 5 | 15 | unlimited |
+| Staff | 1 | 2 | unlimited |
+| Склад (stock) | no | yes | yes |
+| History / reports | last 7 days, no month report | all | all |
+
+- New businesses get a 30-day trial with everything (Unlimited). When it or a
+  paid period ends, they fall back to **Free**; nothing is locked or deleted.
+  Only the admin's manual lock stops entry.
+- Over a limit after a downgrade: the first products in Settings order and
+  the earliest staff keep working; the owner chooses by hiding or reordering.
+  Older history and stock data stay and return with an upgrade.
+- All limits are enforced in the database (`private.current_tier` and
+  friends, migration `plans`); the app mirrors them in `lib/subscription.ts`.
+- Payments record the plan (Standard/Unlimited) and period (month/year).
+  Prices per plan (monthly, optional yearly) are set in the admin panel.
+- Reports have a **Month** view (Standard and Unlimited).
+
 ## Stock and wording (added 2026-10-08)
 
 - **Склад** tab: supplies (flour, sugar, ...) with a unit and an optional
@@ -57,8 +78,8 @@ throw away for each product, so they can't adjust production.
 
 ## Subscriptions and admin (added 2026-10-07)
 
-- Every new business gets a **30-day free trial**, then pays **monthly or
-  yearly**. Prices and bank-transfer details are set in the admin panel and
+- Every new business gets a **30-day trial**, then pays **monthly or
+  yearly** (see Plans). Prices and bank-transfer details are set in the admin panel and
   shown to owners when they need to pay.
 - When neither the trial nor a paid period covers today, or the admin locked
   the business, it can still **read reports but not enter numbers**. Enforced

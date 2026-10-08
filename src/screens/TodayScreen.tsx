@@ -7,6 +7,7 @@ import { useStore } from '../data/StoreProvider'
 import type { DailyEntry, ISODate } from '../data/types'
 import { useI18n } from '../i18n/I18nProvider'
 import { addDays, formatDate, todayInSofia } from '../lib/dates'
+import { FREE_HISTORY_DAYS } from '../lib/subscription'
 import { sortByOrder } from '../lib/reports'
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
@@ -17,7 +18,7 @@ const EMPTY: Counts = { produced: 0, wasted: 0 }
 
 export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
   const { t, locale } = useI18n()
-  const { store, groups, products, role, canEdit, recheckAccess, settings } = useStore()
+  const { store, groups, products, role, canEdit, recheckAccess, settings, limits, inPlan } = useStore()
   const labels = entryLabelKeys(settings.entryLabels)
   const today = todayInSofia()
   const [date, setDate] = useState<ISODate>(today)
@@ -90,6 +91,10 @@ export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
   }
 
   const isToday = date === today
+  // The Free plan sees and edits only today and the 6 days before.
+  const earliest = limits.fullHistory ? null : addDays(today, -(FREE_HISTORY_DAYS - 1))
+  const activeCount = products.filter((p) => !p.archived).length
+  const overLimit = limits.products !== null && activeCount > limits.products
   const visibleGroups = sortByOrder(groups.filter((g) => !g.archived))
     .map((group) => ({
       group,
@@ -104,7 +109,7 @@ export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
         subtitle={formatDate(date, locale, { weekday: 'long', day: 'numeric', month: 'long' })}
         prevLabel={t('previousDay')}
         nextLabel={t('nextDay')}
-        onPrev={() => setDate(addDays(date, -1))}
+        onPrev={earliest && date <= earliest ? undefined : () => setDate(addDays(date, -1))}
         onNext={isToday ? undefined : () => setDate(addDays(date, 1))}
         extra={
           !isToday && (
@@ -116,6 +121,11 @@ export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
       />
 
       <SubscriptionNotice onHowToPay={onHowToPay} />
+      {role === 'owner' && overLimit && (
+        <div className="reminder" role="status">
+          <span>{t('overProductLimit', { count: activeCount, limit: limits.products! })}</span>
+        </div>
+      )}
 
       <div className={`save-status save-status--${status}`} role="status">
         {status === 'saving' && t('saving')}
@@ -134,14 +144,14 @@ export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
           {groupProducts.map((product) => {
             const c = counts[product.id] ?? EMPTY
             return (
-              <div key={product.id} className="card">
+              <div key={product.id} className={inPlan.has(product.id) ? 'card' : 'card card--outside'}>
                 <div className="card__title">{product.name}</div>
                 <Stepper
                   label={t(labels.produced)}
                   productName={product.name}
                   unit={product.unit}
                   tone="produced"
-                  disabled={!canEdit}
+                  disabled={!canEdit || !inPlan.has(product.id)}
                   value={c.produced}
                   onChange={(v) => update(product.id, 'produced', v)}
                 />
@@ -150,11 +160,12 @@ export function TodayScreen({ onHowToPay }: { onHowToPay(): void }) {
                   productName={product.name}
                   unit={product.unit}
                   tone="wasted"
-                  disabled={!canEdit}
+                  disabled={!canEdit || !inPlan.has(product.id)}
                   value={c.wasted}
                   onChange={(v) => update(product.id, 'wasted', v)}
                 />
                 {cappedId === product.id && <p className="card__hint">{t('wastedTooHigh')}</p>}
+                {!inPlan.has(product.id) && <p className="card__note">{t('notInPlan')}</p>}
               </div>
             )
           })}
