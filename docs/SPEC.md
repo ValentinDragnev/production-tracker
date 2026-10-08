@@ -77,7 +77,13 @@ throw away for each product, so they can't adjust production.
 - Customer contact: proizvodstvoibrak@gmail.com (editable in the admin
   panel), shown in Settings → Помощ and next to payment details. It is also
   meant to be the sender of all emails (login codes, reminders).
-- Next: automatic reminder emails (7 days and 1 day before).
+- **Reminder emails** to owners: 7 days and 1 day before access ends, and
+  once when it has ended (trial or paid). A daily job (pg_cron, 07:00 UTC)
+  calls the `send-reminders` function, which takes due reminders from
+  `claim_due_reminders()` (each once per end date; failed sends are released
+  and retried) and emails them via Gmail SMTP (port 465) from
+  proizvodstvoibrak@gmail.com, Bulgarian then English, with prices, Revolut
+  link, bank details and contact. Locked businesses get none.
 
 ## Out of scope for v1
 

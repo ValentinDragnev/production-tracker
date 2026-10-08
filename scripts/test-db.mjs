@@ -7,9 +7,10 @@ import { PGlite } from '@electric-sql/pglite'
 const SUPABASE_STANDINS = `
   create role anon nologin;
   create role authenticated nologin;
-  grant usage on schema public to anon, authenticated;
+  create role service_role nologin;
+  grant usage on schema public to anon, authenticated, service_role;
   -- Supabase grants table and function access by default; RLS does the rest.
-  alter default privileges in schema public grant all on tables to anon, authenticated;
+  alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
   alter default privileges in schema public grant all on functions to anon, authenticated;
 
   create schema auth;

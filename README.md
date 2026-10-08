@@ -42,7 +42,11 @@ email in `supabase/config.toml` and `supabase/templates/`.
 supabase db push        # apply new migrations to the linked project
 supabase config diff    # preview auth setting changes
 supabase config push    # apply them
+supabase functions deploy send-reminders   # daily reminder emails
 ```
+
+The reminder function needs the Gmail app password of the sending account:
+`supabase secrets set SMTP_PASSWORD=...` (never commit it).
 
 ## Layout
 

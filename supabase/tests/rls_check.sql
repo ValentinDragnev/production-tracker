@@ -22,7 +22,7 @@ insert into public.platform_admins (email) values ('d@rls-test.invalid');
 
 -- Helpers live in a scratch schema that disappears with the rollback.
 create schema rls_test;
-grant usage on schema rls_test to authenticated, anon;
+grant usage on schema rls_test to authenticated, anon, service_role;
 
 create function rls_test.act_as(who text) returns void language plpgsql as $$
 begin
@@ -59,7 +59,7 @@ begin
   end if;
 end $$;
 
-grant execute on all functions in schema rls_test to authenticated, anon;
+grant execute on all functions in schema rls_test to authenticated, anon, service_role;
 
 -- 1. Owner A sets up a business with one product and one day of numbers.
 select rls_test.act_as('a');
@@ -450,7 +450,60 @@ set local role authenticated;
 delete from public.supplies where id = '00000000-0000-4000-d000-0000000000b1';
 select rls_test.expect((select count(*) = 1 from public.supply_days), 'deleted supply took its days with it');
 
--- 10. Logged-out visitors get nothing.
+-- 10. Reminder emails: only the server can claim them, each goes out once.
+-- Here A's trial ended yesterday (payment removed); B is paid for a year.
+-- A also gets a staff member, who must not receive the owner's reminders.
+reset role;
+insert into auth.users (id, email, aud, role)
+  values ('00000000-0000-4000-a000-00000000000e', 'e@rls-test.invalid', 'authenticated', 'authenticated');
+insert into public.memberships (business_id, user_id, email, role)
+  values (current_setting('test.biz_a')::uuid, '00000000-0000-4000-a000-00000000000e', 'e@rls-test.invalid', 'staff');
+select rls_test.act_as('a');
+set local role authenticated;
+select rls_test.expect_refused('select * from public.claim_due_reminders()', 'denied', 'owner claimed reminders');
+select rls_test.expect_refused('select * from public.reminder_log', 'denied', 'owner read the reminder log');
+
+reset role;
+set local role service_role;
+create temp table claimed1 as select * from public.claim_due_reminders();
+select rls_test.expect(
+  (select count(*) = 1 and bool_and(kind = 'ended' and is_trial and owner_emails = array['a@rls-test.invalid'])
+   from claimed1),
+  'ended trial is due once, to the owner');
+select rls_test.expect((select count(*) = 0 from public.claim_due_reminders()), 'a claimed reminder is not sent twice');
+
+-- A new period end brings new reminders: a week before, then a day before.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_set_trial_end(current_setting('test.biz_a')::uuid, now() + interval '5 days');
+reset role;
+set local role service_role;
+select rls_test.expect((select count(*) = 1 and min(kind) = 'week' from public.claim_due_reminders()), 'week reminder');
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_set_trial_end(current_setting('test.biz_a')::uuid, now() + interval '12 hours');
+reset role;
+set local role service_role;
+create temp table claimed2 as select * from public.claim_due_reminders();
+select rls_test.expect((select count(*) = 1 and min(kind) = 'day' from claimed2), 'day reminder');
+
+-- A failed email is released and comes back on the next run.
+select public.release_reminder((select log_id from claimed2));
+select rls_test.expect((select count(*) = 1 and min(kind) = 'day' from public.claim_due_reminders()), 'released reminder retried');
+
+-- Locked businesses get no reminders.
+reset role;
+select rls_test.act_as('d');
+set local role authenticated;
+select public.admin_set_trial_end(current_setting('test.biz_a')::uuid, now() + interval '6 days');
+select public.admin_set_locked(current_setting('test.biz_a')::uuid, true);
+reset role;
+set local role service_role;
+select rls_test.expect((select count(*) = 0 from public.claim_due_reminders()), 'locked business gets no reminder');
+
+-- 11. Logged-out visitors get nothing.
 reset role;
 set local role anon;
 do $$
